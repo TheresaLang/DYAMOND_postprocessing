@@ -1,0 +1,5 @@
+__pycache__
+.ipynb_checkpoints
+Untitled.ipynb
+process_dyamond.ipynb
+*.nc
