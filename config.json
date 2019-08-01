@@ -1,0 +1,10 @@
+{
+    "model": "ICON", 
+    "run": "5.0km_2", 
+    "variables": ["TEMP", "PRES", "QV"], 
+    "grid_res": 0.1, 
+    "time_period": ["2016-08-12", "2016-09-10"], 
+    "temp_dir": "/scratch/m/m300773", 
+    "data_dir": "/mnt/lustre02/work/mh1126/m300773/DYAMOND",
+    "numthreads": 36
+}
