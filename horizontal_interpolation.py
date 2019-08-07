@@ -4,12 +4,12 @@
 ##SBATCH --error=model_interpolation-%j.err
 
 #SBATCH --account=um0878       # Charge resources on this project account
-#SBATCH --partition=compute2
+#SBATCH --partition=compute,compute2
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=36     # Specify number of CPUs per task
 #SBATCH --time=08:00:00        # Set a limit on the total run time
 #SBATCH --mem=0                # use all memory on node
-#SBATCH --constraint=256G      # only run on fat memory nodes
+##SBATCH --constraint=256G      # only run on fat memory nodes (needed for NICAM)
 #SBATCH --monitoring=meminfo=10,cpu=5,lustre=5
 ##SBATCH --mail-type=FAIL      # Notify user by email in case of job failure
 
