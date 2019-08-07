@@ -4,3 +4,4 @@ __pycache__
 process_dyamond.ipynb
 *.nc
 logs
+config.json
