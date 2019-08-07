@@ -34,12 +34,12 @@ def interpolate_horizontally(infile, target_grid, weights, outfile, numthreads, 
         numthreads (int): number of OpenMP threads for cdo 
     """
     filename, file_extension = os.path.splitext(infile)
-    if file_extension == '.nc':
+    if file_extension == '.nc' or file_extension == '.nc4':
         to_netCDF = ''
     else:
         to_netCDF = '-f nc4'
         
-    cmd = f'cdo -O {to_netCDF} -P {numthreads} remap,{target_grid},{weights} {infile} {outfile}'
+    cmd = f'cdo --verbose -O {to_netCDF} -P {numthreads} remap,{target_grid},{weights} {infile} {outfile}'
     logger.info(cmd)
     os.system(cmd)
     
@@ -131,9 +131,15 @@ def get_modelspecific_varnames(model):
             'QV': 'ms_qv',
             'PRES': 'ms_pres'
         }
+    elif model == 'GEOS':
+        varname = {
+            'TEMP': 'T',
+            'QV': 'QV',
+            'PRES': 'P'
+        }
 
     else:
-        print('Model {} does not exist or is not implemented yet.')
+        print('Modelspecific variable names for Model {model} have not been implemented yet.')
         return
         
     return varname
@@ -175,36 +181,43 @@ def get_path2weights(model, run, grid_res, **kwargs):
         run (str): name of model run
         grid_res (float): resolution of target grid in degrees.
     """
-    
+    grid_dir = '/work/ka1081/Hackathon/GrossStats/'
     if model == 'ICON':
-        if (run=='5.0km_1'):
-            weights = '/work/ka1081/Hackathon/GrossStats/ICON_R2B09_0.10_grid_wghts.nc'
-        elif (run=='5.0km_2'):
-            weights = '/work/ka1081/Hackathon/GrossStats/ICON_R2B09-mpi_0.10_grid_wghts.nc'
-        elif (run=='2.5km'):
-            weights = '/work/ka1081/Hackathon/GrossStats/ICON_R2B10_0.10_grid_wghts.nc'
+        if run == '5.0km_1':
+            weights = 'ICON_R2B09_0.10_grid_wghts.nc'
+        elif run == '5.0km_2':
+            weights = 'ICON_R2B09-mpi_0.10_grid_wghts.nc'
+        elif run == '2.5km':
+            weights = 'ICON_R2B10_0.10_grid_wghts.nc'
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km".')
             return None
         
     elif model == 'NICAM':
-        if (run=='3.5km'):
-            weights = '/work/ka1081/Hackathon/GrossStats/NICAM-3.5km_0.10_grid_wghts.nc'
-        elif (run=='7.0km'):
-            weights = '/work/ka1081/Hackathon/GrossStats/NICAM-7.0km_0.10_grid_wghts.nc'
+        if run == '3.5km':
+            weights = 'NICAM-3.5km_0.10_grid_wghts.nc'
+        elif run == '7.0km':
+            weights = 'NICAM-7.0km_0.10_grid_wghts.nc'
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "3.5km" and "7.0km".')
             return None
-        
+    
+    elif model == 'GEOS':
+        if run == '3.0km' or run == '3.0km-MOM':
+            weights = 'GEOS-3.25km_0.10_grid_wghts.nc'
+        else:
+            logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "3.0km" and "3.0km-MOM".')
+
     # other models...
     else:
         logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
         return None
     
-    if not os.path.isfile(weights):
+    path2weights = os.path.join(grid_dir, weights)
+    if not os.path.isfile(path2weights):
         logger.warning('Warning: There are no pre-calculated weights for this model run and target grid yet.')
-                 
-    return weights
+
+    return path2weights
 
 def get_path2heightfile(model, grid_res, **kwargs):
     """ Returns path to file containing geometrical heights corresponding to model levels for a given model.
@@ -233,16 +246,16 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
     raw_files = []
     out_files = []
     
-    for var in variables:
+    
         
-        if model == 'ICON':
-            # dictionary containing endings of filenames containing the variables
-            var2suffix = {
-                'TEMP': 'atm_3d_t_ml_',
-                'QV': 'atm_3d_qv_ml_',
-                'PRES': 'atm_3d_pres_ml_'
-                    }
-
+    if model == 'ICON':
+        # dictionary containing endings of filenames containing the variables
+        var2suffix = {
+            'TEMP': 'atm_3d_t_ml_',
+            'QV': 'atm_3d_qv_ml_',
+            'PRES': 'atm_3d_pres_ml_'
+                }
+        for var in variables:
             # filenames of raw files, grid weights and the output file
             suffix = var2suffix[var]
             if (run=='5.0km_1'):
@@ -260,18 +273,19 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 time_str = time[i].strftime("%m%d")
                 temp = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
                 out_file = os.path.join(temp_dir, temp)
-                
+
                 raw_files.append(raw_file)
                 out_files.append(out_file)
-                
-        elif model == 'NICAM':
-            # dictionary containing endings of filenames containing the variables
-            var2filename = {
-                'TEMP': 'ms_tem.nc',
-                'QV': 'ms_qv.nc',
-                'PRES': 'ms_pres.nc'
-            }
 
+    elif model == 'NICAM':
+        # dictionary containing filenames containing the variables
+        var2filename = {
+            'TEMP': 'ms_tem.nc',
+            'QV': 'ms_qv.nc',
+            'PRES': 'ms_pres.nc'
+        }
+                
+        for var in variables:
             # paths to raw files
             filename = var2filename[var]
             if (run=='3.5km'):
@@ -289,18 +303,102 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 time_str = time[i].strftime("%m%d")
                 temp = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
                 out_file = os.path.join(temp_dir, temp)
-                
+
                 raw_files.append(raw_file)
                 out_files.append(out_file)
-            
-        else:
-            logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
-            return None
-            
-      
+
+    elif model == 'GEOS':
+        var2dirname = {
+            'TEMP': 'T',
+            'QV': 'QV',
+            'PRES': 'P'
+        }
+        # GEOS output is one file per time step (3-hourly)
+        for var in variables:
+            varname = var2dirname[var]
+            if run == '3.0km':
+                stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/inst/inst_03hr_3d_{varname}_Mv'
+            else:
+                print (f'Run {run} not supported for {model}.\nSupported runs are: "3.0km".')  
+                
+            for i in np.arange(time.size):
+                for h in np.arange(0, 24, 3):
+                    date_str = time[i].strftime("%Y%m%d")
+                    hour_str = f'{h:02d}'
+                    hour_file = f'DYAMOND.inst_03hr_3d_{varname}_Mv.{date_str}_{hour_str}00z.nc4'
+                    hour_file = os.path.join(stem, hour_file)
+                    date_str = time[i].strftime("%m%d")
+                    out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                    out_file = os.path.join(temp_dir, out_file)
+                    raw_files.append(hour_file)
+                    out_files.append(out_file)
+#        for var in variables:
+#            if run == '3.0km' or run == '3.0km-MOM':
+#                stem = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/GEOS'
+#            else:
+#                print (f'Run {run} not supported for {model}.\nSupported runs are: "3.0km" and "3.0km-MOM".')    
+#            for i in np.arange(time.size):
+#                date_str = time[i].strftime("%m%d")
+#                day_file = f'GEOS-{run}_{var}_{date_str}.nc'
+#                day_file = os.path.join(stem, day_file)
+#                temp = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
+#                out_file = os.path.join(temp_dir, temp)
+#                raw_files.append(day_file)
+#                out_files.append(out_file)
+                
+    else:
+        logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
+        return None
+              
     return raw_files, out_files
 
-# FIXME: save merged files in temporary dir!
+#def get_hoursmergingfilelist(model, run, variables, time_period, data_dir, **kwargs):
+#    """ Returns a list of filenames of 3-hourly raw DYAMOND output needed to merge these files together before 
+#    horizontal interpolation. This is needed for the models GEOS, #FIXME.
+#    """
+#    
+#    time = pd.date_range(time_period[0], time_period[1], freq='1D')
+#    out_dir = os.path.join(data_dir, model.upper())
+#    in_files = []
+#    out_files = []
+#    
+#    if model == 'GEOS':
+#        var2dirname = {
+#            'TEMP': 'T',
+#            'QV': 'QV',
+#            'PRES': 'P'
+#        }
+#    
+#        for v, var in enumerate(variables):
+#            print(f'v = {v}')
+#            varname = var2dirname[var]
+#            if run == '3.0km':
+#                stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/inst/inst_03hr_3d_{varname}_Mv'
+#            elif run == '3.0km-MOM':
+#                stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km-MOM/inst/inst_03hr_3d_{varname}_Mv'
+#            else:
+#                print (f'Run {run} not supported for GEOS.\nSupported runs are: "3.0km" and "3.0km-MOM".')    
+#            for i in np.arange(time.size):
+#                print(f'i = {i}')
+#                in_files.append([])
+#                print('appended')
+#                date_str = time[i].strftime("%m%d")
+#                temp = f'GEOS-{run}_{var}_{date_str}.nc'
+#                out_file = os.path.join(out_dir, temp)
+#                out_files.append(out_file)
+#                for h in np.arange(0, 24, 3): 
+#                    date_str = time[i].strftime("%Y%m%d")
+#                    hour_str = f'{h:02d}'
+#                    hour_file = f'DYAMOND.inst_03hr_3d_{varname}_Mv.{date_str}_{hour_str}00z.nc4'
+#                    hour_file = os.path.join(stem, hour_file)
+#                    in_files[v * time.size + i].append(hour_file)
+#    else: 
+#         logger.error('The model specified for time merging of 3-hourly output does not exist or has not been implemented yet.') 
+#                
+#    return in_files, out_files
+                
+
+
 def get_mergingfilelist(model, run, variables, time_period, temp_dir, data_dir, **kwargs):
     """ Returns a list of filenames of horizontally interpolated DYAMOND output needed for time merging.
     For each variable, the list contains a list of filenames. 
@@ -323,8 +421,13 @@ def get_mergingfilelist(model, run, variables, time_period, temp_dir, data_dir, 
         outfile_name = os.path.join(data_dir, model.upper(), f'{model}-{run}_{var}_hinterp_merged.nc')
         outfile_list.append(outfile_name)
         for i in np.arange(time.size):
-            infile_name = os.path.join(temp_dir, f'{model}-{run}_{var}_{time[i].strftime("%m%d")}_hinterp.nc')
-            infile_list[v].append(infile_name)
+            if model == 'GEOS':
+                for h in np.arange(0, 24, 3):
+                    infile_name = os.path.join(temp_dir, f'{model}-{run}_{var}_{time[i].strftime("%m%d")}_{h:02d}_hinterp.nc')
+                    infile_list[v].append(infile_name)    
+            else:
+                infile_name = os.path.join(temp_dir, f'{model}-{run}_{var}_{time[i].strftime("%m%d")}_hinterp.nc')
+                infile_list[v].append(infile_name)
      
     return infile_list, outfile_list
 
