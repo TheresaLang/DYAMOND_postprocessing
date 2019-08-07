@@ -5,3 +5,4 @@ process_dyamond.ipynb
 *.nc
 logs
 config.json
+3hourly_output_merging.py
