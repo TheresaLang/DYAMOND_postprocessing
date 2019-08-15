@@ -24,10 +24,11 @@ targetheightfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/target_height
 infiles, outfiles = ptools.get_vinterpolationfilelist(**config)
 # get variable names for this model (needed to read file in function for vertical interpolation)
 varnames = ptools.get_modelspecific_varnames(config['model'])
+varunits = ptools.get_variable_units()
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to variable
 # vertical interpolation of file with index ID in l0-2 ist infiles
 variable = config['variables'][ID]
 ptools.interpolate_vertically(
-    infiles[ID], varnames[variable], heightfile, targetheightfile, outfiles[ID], variable, **config)
+    infiles[ID], varnames[variable], varunits[variable], heightfile, targetheightfile, outfiles[ID], variable, **config)
 
