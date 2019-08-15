@@ -3,7 +3,7 @@
 #SBATCH --output=logs/model_interpolation-%j.out
 ##SBATCH --error=model_interpolation-%j.err
 
-#SBATCH --account=um0878       # Charge resources on this project account
+#SBATCH --account=mh1126       # Charge resources on this project account
 #SBATCH --partition=compute,compute2
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=36     # Specify number of CPUs per task
@@ -24,16 +24,18 @@ config = ptools.config()
 # get paths to grids, weights and raw files
 grid = ptools.get_path2grid(config['grid_res'])
 weights = ptools.get_path2weights(**config)
-# get list of input and output files
-infiles, tempfiles = ptools.get_interpolationfilelist(**config)
-
+# get list of input and output files and options for horizontal interpolation
+infiles, tempfiles, options = ptools.get_interpolationfilelist(**config)
 # ID of this job
 # Each job gets an own ID from 0 to N, where N is the number of jobs in the job array
 # N is specified when job is submitted with 
 # $ sbatch --array=0-N horizontal_interpolation.py
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to infile
 
+print(infiles[ID])
+print(tempfiles[ID])
+print(options[ID])
 # horizontal interpolation for the file with index ID in the list infiles
-ptools.interpolate_horizontally(infiles[ID], grid, weights, tempfiles[ID], **config)
+ptools.interpolate_horizontally(infiles[ID], grid, weights, tempfiles[ID], options[ID], **config)
 
 
