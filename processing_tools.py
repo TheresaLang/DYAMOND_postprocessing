@@ -181,6 +181,18 @@ def get_modelspecific_varnames(model):
             'QV': 'QV',
             'PRES': 'PRES'
         }
+    elif model == 'SAM':
+        varname = {
+            'TEMP': 'TABS',
+            'QV': 'QV',
+            'PRES': 'PRES'
+        }
+    elif model == 'UM':
+        varname == {
+            'TEMP': 'air_temperature',
+            'QV': 'specific_humidity',
+            'PRES': 'air_pressure'
+        }
     elif model == 'MPAS':
         varname = {
             'TEMP': 'temperature',
@@ -271,6 +283,12 @@ def get_path2weights(model, run, grid_res, **kwargs):
             weights = 'SAM_0.10_grid_wghts.nc'
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "4.0km".')
+    
+    elif model == 'UM':
+        if run == '5.0km':
+            weights = 'UM-5km_0.10_grid_wghts.nc'
+        else:
+            logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km".')
             
     
     elif model == 'MPAS':
@@ -346,8 +364,8 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             for i in np.arange(time.size):
                 raw_file = stem + time[i].strftime("%Y%m%d") + 'T000000Z.grb'
                 time_str = time[i].strftime("%m%d")
-                temp = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
-                out_file = os.path.join(temp_dir, temp)
+                out_file = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
+                out_file = os.path.join(temp_dir, out_file)
 
                 raw_files.append(raw_file)
                 out_files.append(out_file)
@@ -377,8 +395,8 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 dayfolder = glob.glob(os.path.join(stem, time[i].strftime("%Y%m%d")+'*'))[0]
                 raw_file = os.path.join(dayfolder, filename)
                 time_str = time[i].strftime("%m%d")
-                temp = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
-                out_file = os.path.join(temp_dir, temp)
+                out_file = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
+                out_file = os.path.join(temp_dir, out_file)
 
                 raw_files.append(raw_file)
                 out_files.append(out_file)
@@ -483,6 +501,30 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                     raw_files.append(hour_file)
                     out_files.append(out_file)
                     options.append(option)
+                    
+    elif model == 'UM':
+        stem = '/mnt/lustre02/work/ka1081/DYAMOND/UM-5km'
+        
+        var2dirname = {
+            'TEMP': 'ta',
+            'QV': 'hus',
+            'PRES': 'phalf'
+        }
+        
+        for var in variables:
+            for i in np.arange(time.size):
+                date_str = time[i].strftime('%Y%m%d')
+                varstr = var2dirname[var]
+                day_file = f'{varstr}_3hr_HadGEM3-GA71_N2560_{date_str}.nc'
+                day_file = os.path.join(stem, varstr, day_file)
+                
+                out_file = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
+                out_file = os.path.join(temp_dir, out_file)
+                
+                raw_files.append(day_file)
+                out_files.append(out_file)
+                options.append('')
+        
 
     elif model == 'MPAS':
         if run == '3.75km':
@@ -659,7 +701,7 @@ def get_mergingfilelist(model, run, variables, time_period, temp_dir, data_dir, 
         outfile_name = os.path.join(data_dir, model.upper(), f'{model}-{run}_{var}_hinterp_merged.nc')
         outfile_list.append(outfile_name)
         for i in np.arange(time.size):
-            if model == 'GEOS' or model == 'IFS':
+            if model == 'GEOS' or model == 'IFS' or model == 'SAM':
                 for h in np.arange(0, 24, 3):
                     infile_name = os.path.join(temp_dir, f'{model}-{run}_{var}_{time[i].strftime("%m%d")}_{h:02d}_hinterp.nc')
                     infile_list[v].append(infile_name)    
