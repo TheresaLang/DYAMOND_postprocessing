@@ -12,6 +12,11 @@
 #SBATCH --monitoring=meminfo=10,cpu=5,lustre=5
 ##SBATCH --mail-type=FAIL      # Notify user by email in case of job failure
 
+# Script to preprocess raw 3D DYAMOND IFS output to make it usable for CDOs.
+# Model, run and time period have to be specified before in config.json.
+# One job corresponds to the processing of one IFS output file (which contains
+# one variable and one timestep).
+# Script has to be submitted with option --array=0-<Number_of_inputfiles>
 import os
 import numpy as np
 from os.path import join

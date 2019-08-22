@@ -11,6 +11,10 @@
 #SBATCH --monitoring=meminfo=10,cpu=5,lustre=5
 ##SBATCH --mail-type=FAIL        # Notify user by email in case of job failure
 
+# Script to average over all timesteps contained on one (merged) file.
+# Model, run and time period have to be specified in config.json.
+# One job corresponds to the processing of one variable.
+# Script has to be submitted with option --array=0-<Number_of_variables>
 import os
 import numpy as np
 from os.path import join

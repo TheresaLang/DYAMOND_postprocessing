@@ -13,6 +13,11 @@
 #SBATCH --monitoring=meminfo=10,cpu=5,lustre=5
 ##SBATCH --mail-type=FAIL      # Notify user by email in case of job failure
 
+# Script to horizontally interpolate raw 3D DYAMOND output to a regular lat-lon grid.
+# Model, run and time period have to be specified in config.json.
+# One job corresponds to the processing of one DYAMOND output file (which contains
+# one variable and either one timestep or 8 timesteps.)
+# Script has to be submitted with option --array=0-<Number_of_inputfiles>
 import os
 import numpy as np
 from os.path import join
@@ -32,9 +37,6 @@ infiles, tempfiles, options = ptools.get_interpolationfilelist(**config)
 # $ sbatch --array=0-N horizontal_interpolation.py
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to infile
 
-print(infiles[ID])
-print(tempfiles[ID])
-print(options[ID])
 # horizontal interpolation for the file with index ID in the list infiles
 ptools.interpolate_horizontally(infiles[ID], grid, weights, tempfiles[ID], options[ID], **config)
 
