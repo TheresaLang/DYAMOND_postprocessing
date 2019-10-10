@@ -31,7 +31,7 @@ config = ptools.config()
 
 # paths to input files, output files and file containing model level heights 
 infiles, outfiles, heightfile = ptools.get_vinterpolation_per_timestep_filelist(**config)
-targetheightfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/target_height.nc'
+targetheightfile = ptools.get_path2targetheightfile(**config)
 
 timestep_ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to timestep
 
