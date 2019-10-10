@@ -23,7 +23,7 @@ import processing_tools as ptools
 # load config
 config = ptools.config()
 # get list of filenames for input and output files (one entry per variable)
-infiles, outfiles = ptools.get_averagingfilelist(**config)
+infiles, outfiles, options = ptools.get_averagingfilelist(**config)
 
 # ID of this job
 # Each job gets an own ID from 0 to N, where N is the number of jobs in the job array
@@ -33,4 +33,4 @@ ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to variable
 
 # time averaging for the file with index ID in the filelist
 # here, the index corresponds to the variable
-ptools.average_timesteps(infiles[ID], outfiles[ID], **config)
+ptools.average_timesteps(infiles[ID], outfiles[ID], options[ID], **config)
