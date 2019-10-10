@@ -24,7 +24,7 @@ import processing_tools as ptools
 config = ptools.config()
 # load paths to files containing heights
 heightfile = ptools.get_path2heightfile(**config)
-targetheightfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/target_height.nc'
+targetheightfile = ptools.get_path2targetheightfile(**config)
 # get list of input and output files (one entry per vriable)
 infiles, outfiles = ptools.get_vinterpolationfilelist(**config)
 
