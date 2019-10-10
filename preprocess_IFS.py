@@ -2,7 +2,7 @@
 #SBATCH --job-name=IFS_preprocessing
 #SBATCH --output=logs/IFS_preprocessing-%j.out
 
-#SBATCH --account=um0878       # Charge resources on this project account
+#SBATCH --account=mh1126       # Charge resources on this project account
 #SBATCH --partition=compute,compute2
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=36     # Specify number of CPUs per task
