@@ -31,7 +31,7 @@ config = ptools.config()
 
 # paths to files containing pressure and temperature (for all timesteps) and topography
 pres_file, temp_file, out_files = ptools.get_height_calculation_filelist(**config)
-z0_file = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/IFS/IFS-4.0km_OROG.nc'
+z0_file = ptools.get_path2z0file(**config)
 
 timestep_ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to timestep
 
