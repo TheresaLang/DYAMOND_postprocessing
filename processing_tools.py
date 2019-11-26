@@ -5,11 +5,14 @@ import glob
 import logging
 import json
 import typhon
+import random
+import analysis_tools as atools
 from cdo import Cdo
 from subprocess import call, check_output
 from concurrent.futures import ProcessPoolExecutor, as_completed, wait # for launching parallel tasks
 from scipy.interpolate import interp1d
 from netCDF4 import Dataset
+import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -39,13 +42,62 @@ def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numt
     tempfile_2 = filename+'_2'+file_extension
     tempfile_3 = filename+'_3'+file_extension
     
-    cmd_1 = f'cdo --eccodes select,name={option_selvar} {infile} {tempfile_1}'
-    cmd_2 = f'grib_set -s numberOfVerticalCoordinateValues={option_nzlevs} {tempfile_1} {tempfile_2}'
-    cmd_3 = f'rm {tempfile_1}'
-    cmd_4 = f'grib_set -s editionNumber=1 {tempfile_2} {tempfile_3}'
-    cmd_5 = f'rm {tempfile_2}'
-    cmd_6 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_3} {outfile}'
-    cmd_7 = f'rm {tempfile_3}'
+    # for OLR and IWV less pre-processing steps are needed than for the other variables
+    if option_nzlevs == '':
+        cmd_1 = f'cdo --eccodes select,name={option_selvar} {infile} {tempfile_1}'
+        cmd_2 = f'grib_set -s editionNumber=1 {tempfile_1} {tempfile_2}'
+        cmd_3 = f'rm {tempfile_1}'
+        cmd_4 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_2} {outfile}'
+        cmd_5 = f'rm {tempfile_2}'
+        
+        logger.info(cmd_1)
+        os.system(cmd_1)
+        logger.info(cmd_2)
+        os.system(cmd_2)
+        logger.info(cmd_3)
+        os.system(cmd_3)
+        logger.info(cmd_4)
+        os.system(cmd_4)
+        logger.info(cmd_5)
+        os.system(cmd_5)
+        
+    else:
+        cmd_1 = f'cdo --eccodes select,name={option_selvar} {infile} {tempfile_1}'
+        cmd_2 = f'grib_set -s numberOfVerticalCoordinateValues={option_nzlevs} {tempfile_1} {tempfile_2}'
+        cmd_3 = f'rm {tempfile_1}'
+        cmd_4 = f'grib_set -s editionNumber=1 {tempfile_2} {tempfile_3}'
+        cmd_5 = f'rm {tempfile_2}'
+        cmd_6 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_3} {outfile}'
+        cmd_7 = f'rm {tempfile_3}'
+
+        logger.info(cmd_1)
+        os.system(cmd_1)
+        logger.info(cmd_2)
+        os.system(cmd_2)
+        logger.info(cmd_3)
+        os.system(cmd_3)
+        logger.info(cmd_4)
+        os.system(cmd_4)
+        logger.info(cmd_5)
+        os.system(cmd_5)
+        logger.info(cmd_6)
+        os.system(cmd_6)
+        logger.info(cmd_7)
+        os.system(cmd_7)
+
+def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwargs):
+    """ Perform processing steps required before horizontal interpolation for the MPAS model.
+    
+    Parameters:
+        infile (str): Name of input file
+        tempfile (str): Name for temporary files
+        outfile (str): Name for preprocessed output file
+        numthreads (int): Number of OpenMP threads for cdo
+    """
+    gridfile = '/work/ka1081/DYAMOND/PostProc/GridsAndWeights/MPAS-3.75km_gridinfo.nc'
+    cmd_1 = f'cdo -P 4 -f nc4 setattribute,*@axis="txz" -selname,{option_selvar} {infile} {tempfile}'
+    cmd_2 = f'cdo -P 4 setgrid,mpas:{gridfile} {tempfile} {outfile}'
+    cmd_3 = f'rm {tempfile}'
     
     logger.info(cmd_1)
     os.system(cmd_1)
@@ -53,14 +105,13 @@ def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numt
     os.system(cmd_2)
     logger.info(cmd_3)
     os.system(cmd_3)
-    logger.info(cmd_4)
-    os.system(cmd_4)
-    logger.info(cmd_5)
-    os.system(cmd_5)
-    logger.info(cmd_6)
-    os.system(cmd_6)
-    logger.info(cmd_7)
-    os.system(cmd_7)
+    
+
+def preprocess_ARPEGE_1(infile, outfile, **kwargs):
+    """
+    """
+    cmd_1 = f'/work/ka1081/DYAMOND/PostProc/Utilities/gribmf2ecmwf {infile} {outfile}'
+
     
 def interpolate_horizontally(infile, target_grid, weights, outfile, options, numthreads, **kwargs):
     """ Horizontal Interpolation to another target grid with the CDO command remap 
@@ -107,9 +158,9 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
     temp_name = varnames['TEMP']
     qv_name = varnames['QV']
     
-    if model == 'IFS':
-        pres_name = 'SURF_PRES'
-    elif model == 'SAM':
+#    if model == 'IFS':
+#        pres_name = 'SURF_PRES'
+    if model == 'SAM':
         pres_name = 'PP'
     else:
         pres_name = varnames['PRES']
@@ -120,8 +171,8 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
         lon = ds.variables['lon'][:].filled(np.nan)
         
     with Dataset(pres_file) as ds:
-        if model == 'IFS':
-            surf_pres = np.exp(ds.variables[pres_name][timestep].filled(np.nan))
+#        if model == 'IFS':
+#            surf_pres = np.exp(ds.variables[pres_name][timestep].filled(np.nan))
         if model == 'SAM':
             pres_pert = ds.variables[pres_name][timestep].filled(np.nan)
             pres_mean = ds.variables['p'][:].filled(np.nan)
@@ -131,13 +182,13 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
     with Dataset(qv_file) as ds:
         qv = ds.variables[qv_name][timestep].filled(np.nan)
     
-    # for IFS and SAM, pressure has to be calculated first
-    if model == 'IFS':
-        pres = np.ones(temp.shape) * np.nan
-        a, b = get_IFS_pressure_scaling_parameters()
-        for la in range(temp.shape[1]):
-            for lo in range(temp.shape[2]):            
-                pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
+    # for SAM, pressure has to be calculated from mean pressure and pressure perturbation first
+#    if model == 'IFS':
+#        pres = np.ones(temp.shape) * np.nan
+#        a, b = get_IFS_pressure_scaling_parameters()
+#        for la in range(temp.shape[1]):
+#            for lo in range(temp.shape[2]):            
+#                pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
     
     if model == 'SAM':
         qv = qv * 1e-3
@@ -154,9 +205,10 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
     logger.info('Calc RH')
     rh = vmr * pres / e_eq
     rh = np.expand_dims(rh, axis=0)
-    
+    if model == 'MPAS':
+        rh = rh.transpose(0, 3, 1, 2)
     # Save RH to file 
-    height = np.arange(temp.shape[0])
+    height = np.arange(rh.shape[1])
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_RH_{date_str}_{hour_str}_hinterp.nc'
@@ -355,11 +407,20 @@ def calc_height_from_pressure_IFS(pres_file, temp_file, z0_file, out_file, times
         if model == 'SAM':
             pres_pert = ds.variables[pres_name][timestep].filled(np.nan)
             pres_mean = ds.variables['p'][:].filled(np.nan)
+        if model == 'FV3':
+            pres_vector = ds.variables['pfull'][:].filled(np.nan)
+            pres = np.zeros((len(pres_vector), len(lat), len(lon)))
+            for la in range(len(lat)):
+                for lo in range(len(lon)):
+                    pres[:, la, lo] = pres_vector
         else:
             pres = ds.variables[pres_name][timestep].filled(np.nan)
     
     with Dataset(z0_file) as ds:
-        z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
+        if model == 'IFS':
+            z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
+        elif model == 'FV3':
+            z0 = ds.variables['z'][:].filled(np.nan)
     
     logger.info('Calculate heights')
     height = np.flipud(pressure2height(np.flipud(pres), np.flipud(temp), z0))
@@ -384,19 +445,16 @@ def pressure2height(p, T, z0=None):
     Returns:
         ndarray: Relative height above lowest pressure level [m].
     """
-#    if p[0, 0, 0] < p[-1, 0, 0]:
-#        np.flipud(p)
-#        np.flipud(T)
-         
+     
     layer_depth = np.diff(p, axis=0)
     rho = typhon.physics.thermodynamics.density(p, T)
     rho_layer = 0.5 * (rho[:-1] + rho[1:])
 
     z = np.cumsum(-layer_depth / (rho_layer * typhon.constants.g), axis=0) + z0
+    a = np.expand_dims(z0, axis=0)
     z = np.vstack((np.expand_dims(z0, axis=0), z))
     
-    return z
-    
+    return z  
         
 def merge_timesteps(infiles, outfile, numthreads, **kwargs):
     """ Merge files containing several time steps to one file containing all time steps.
@@ -418,7 +476,7 @@ def average_timesteps(infile, outfile, options, numthreads, **kwargs):
     Parameter:
         infile (str): path to input file containing several time steps
         outfile (str): name for file containing time average
-        numthreads_timeaverage (int): number of OpenMP threads for cdo
+        numthreads (int): number of OpenMP threads for cdo
     """
     if options != '':
         options = options + ' '
@@ -427,7 +485,13 @@ def average_timesteps(infile, outfile, options, numthreads, **kwargs):
     os.system(cmd)
 
 def select_lonlatbox(infile, outfile, lonlatbox, numthreads, **kwargs):
-    """
+    """ Select a lon-lat box from the fields contained in one file.
+    
+    Parameters:
+        infile (str): path to input file containing several time steps
+        outfile (str): name for file containing time average
+        lonlatbox (list): boundaries of latitude longitude box: [lonmin lonmax latmin latmax]
+        numthreads (int): number of OpenMP threads for cdo
     """
     lon_1 = lonlatbox[0]
     lon_2 = lonlatbox[1]
@@ -436,6 +500,119 @@ def select_lonlatbox(infile, outfile, lonlatbox, numthreads, **kwargs):
     cmd = f'cdo -O -P {numthreads} sellonlatbox,{lon_1},{lon_2},{lat_1},{lat_2} {infile} {outfile}'
     logger.info(cmd)
     os.system(cmd)
+
+def select_random_profiles(num_samples_tot, infiles, outfiles, heightfile, landmaskfile, model, run, variables, lonlatbox, vinterp, **kwargs):
+    """ Selects a subset of random profiles from (horizontally interpolated) model fields, sorts them by their integrated
+    water vapor and saves them.
+    
+    Parameters:
+        num_samples_tot (int): Total number of profiles to select
+        infiles (list of str): List of names of input files (each file contains one variable)
+        outfiles (list of str): List of names for output files
+        heightfile (str): Full path to file containing height vector
+        landmaskfile (str): Full path to file containing land mask
+        model (str): name of model
+        run (str): name of model run
+        variables (list of str): names of variables (same order as in infiles!!)
+        lonlatbox (list of floats): Boundaries of lon-lat box to select [lonmin, lonmax, latmin, latmax]
+        vinterp (boolean): True, if data is already interpolated vertically       
+    """
+    variables_2D = ['OLR', 'IWV', 'lat', 'lon']
+    
+    # read height, latitude and longitude information
+    height = atools.read_var(heightfile, model, 'target_height')
+    num_levels = height.shape[0]
+    var = variables[0]
+    varname = get_modelspecific_varnames(model)[var]
+    filename = infiles[0]
+    num_timesteps = Dataset(filename).variables[varname].shape[0]
+    num_samples_timestep = int(num_samples_tot / num_timesteps)
+    lat = atools.read_var(filename, model, 'lat')
+    lon = atools.read_var(filename, model, 'lon')
+    
+    # indices for lon-lat box
+    lat_ind = np.where(np.logical_and(lat >= lonlatbox[2], lat <= lonlatbox[3]))[0]
+    lon_ind = np.where(np.logical_and(lon >= lonlatbox[0], lon <= lonlatbox[1]))[0]
+    lat_reg = lat[lat_ind]
+    lon_reg = lon[lon_ind]
+    
+    num_lat = len(lat_reg)
+    num_lon = len(lon_reg)
+    num_profiles = num_lat * num_lon
+     
+    # get ocean_mask
+    ocean_mask = np.logical_not(
+        np.squeeze(atools.read_var(landmaskfile, model, 'land_mask'))
+    )
+    ocean_mask = ocean_mask[lat_ind][:, lon_ind].astype(int)
+    ocean_mask_profiles = np.reshape(ocean_mask, num_profiles)
+    ocean_mask_idx = np.where(ocean_mask_profiles)[0]
+    
+    # allocate dictionaries for profiles
+    profiles = {}    
+    global_field = {}
+    profiles_sorted = {} 
+    global_field['lon'], global_field['lat'] = np.meshgrid(lon_reg, lat_reg)
+    for i, var in enumerate(variables + ['lat', 'lon']):        
+        if var in variables_2D:
+            profiles[var] = np.ones((num_samples_tot)) * np.nan
+        else:
+            profiles[var] = np.ones((num_levels, num_samples_tot)) * np.nan
+            
+    # change back    
+    for timestep in range(num_timesteps):
+        print(timestep)
+        # read variables for this timestep
+        for i, var in enumerate(variables):
+            print(var)
+            if var in variables_2D:
+                global_field[var] = np.squeeze(
+                    atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=~vinterp)
+                )[lat_ind][:, lon_ind]
+            else:  
+                global_field[var] = np.squeeze(
+                    atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=~vinterp)
+                )[:, lat_ind, :][:, :, lon_ind]
+        
+        # Add grid cells to mask for which the lowermost value is NaN 
+        # (e.g. some coastal grid cells in NICAM)
+        nan_mask_idx = np.where(
+            np.logical_not(np.isnan(np.reshape(global_field['RH'][0], (num_profiles))))
+        )[0]
+        total_mask_idx = np.intersect1d(ocean_mask_idx, nan_mask_idx)
+        
+        # Generate random indices (that are not masked)
+        random_idx = random.sample(list(total_mask_idx), num_samples_timestep)
+        
+        # find start and end indices for this timestep in the full array
+        start = timestep * num_samples_timestep
+        end = (timestep + 1) * num_samples_timestep
+        
+        # Select random indices from fields for all variables
+        for var in variables + ['lat', 'lon']:
+            if var in variables_2D:
+                profiles[var][start:end] = np.reshape(global_field[var], (num_profiles))[random_idx]
+            else:
+                profiles[var][:, start:end] = np.reshape(global_field[var], (num_levels, num_profiles))[:, random_idx]
+                print(np.where(np.isnan(profiles[var][:, start:end]))[0])
+                
+    # calculate IWV
+    profiles['IWV'] = atools.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)           
+    # get indices to sort by IWV
+    IWV_sort_idx = np.argsort(profiles['IWV'])
+        
+    # sort by IWV
+    for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
+        if var in variables_2D:
+            profiles_sorted[var] = profiles[var][IWV_sort_idx]
+            vector_to_netCDF(
+                profiles_sorted[var], var, '', range(num_samples_tot), 'profile_index', outfiles[i], overwrite=True
+            )
+        else:
+            profiles_sorted[var] = profiles[var][:, IWV_sort_idx]
+            array2D_to_netCDF(
+                profiles_sorted[var], var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outfiles[i], overwrite=True
+            ) 
     
 def get_modelspecific_varnames(model):
     """ Returns dictionary with variable names for a specific model.
@@ -446,13 +623,23 @@ def get_modelspecific_varnames(model):
     
     if model == 'ICON':
         varname = {
-            'TEMP': 't',
-            'QV': 'q',
-            'PRES': 'pres',
+#            'TEMP': 't',
+#            'QV': 'q',
+#            'PRES': 'pres',
+#            'RH': 'RH',
+#            'QI': 'param213.1.0',
+#            'OLR': 'nlwrf_2',
+#            'IWV': 'param214.1.0',
+            'TEMP': 'T',
+            'QV': 'QV',
+            'PRES': 'P',
             'RH': 'RH',
-            'QI': 'param213.1.0',
-            'OLR': 'nlwrf_2',
-            'IWV': 'param214.1.0'
+            'QI': 'QI_DIA',
+            'OLR': 'ATHB_T',
+            'IWV': 'TQV_DIA',
+            'QC': 'tot_qc_dia',
+            'W500': 'omega',
+            'W': 'w'
         }
     elif model == 'NICAM':
         varname = {
@@ -464,7 +651,9 @@ def get_modelspecific_varnames(model):
             'IWV': 'sa_vap_atm',
             'OLR': 'sa_lwu_toa',
             'FTOASWD': 'ss_swd_toa',
-            'FTOASWU': 'ss_swu_toa'
+            'FTOASWU': 'ss_swu_toa',
+            'QC': 'ms_qc',
+            'W': 'ms_w'
         }
     elif model == 'GEOS':
         varname = {
@@ -475,14 +664,20 @@ def get_modelspecific_varnames(model):
             'H': 'H',
             'QI': 'QI',
             'OLR': 'OLR',
-            'IWV': 'TQV'
+            'IWV': 'TQV',
+            'QC': 'QC',
+            'W': 'W', 
+            'W500': 'OMEGA'
         }    
     elif model == 'IFS':
         varname = {
             'TEMP': 'TEMP',
             'QV': 'QV',
+            'QI': 'QI',
             'PRES': 'PRES',
             'RH': 'RH',
+            'OLR': 'OLR',
+            'IWV': 'IWV',
             'H': 'H'
         }
     elif model == 'SAM':
@@ -506,12 +701,28 @@ def get_modelspecific_varnames(model):
             'IWV': 'atmosphere_water_vapor_content',
             'ICI': 'atmosphere_mass_content_of_cloud_ice'
         }
+        
+    elif model == 'FV3':
+        varname = {
+            'TEMP': 'temp',
+            'QV': 'qv',
+            'PRES': 'pres',
+            'RH': 'RH',
+            'QI': 'qi',
+            'IWV': 'intqv',
+            'OLR': 'flut',
+            'H': 'H'
+        }
+        
     elif model == 'MPAS':
         varname = {
             'TEMP': 'temperature',
             'QV': 'qv',
+            'QI': 'qi',
             'PRES': 'pressure',
-            'RH': 'RH'
+            'RH': 'RH',
+            'IWV': 'vert_int_qv',
+            'OLR': 'aclwnett'
         }
 
     else:
@@ -532,7 +743,8 @@ def get_variable_units():
         'QI': 'kg kg**-1',
         'OLR': 'W m**-2',
         'IWV': 'kg m**-2',
-        'ICI': 'kg m**-2'
+        'ICI': 'kg m**-2',
+        'H': 'm'
     }
     
     return varunit        
@@ -609,7 +821,12 @@ def get_path2weights(model, run, grid_res, **kwargs):
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km".')
             
-    
+    elif model == 'FV3':
+        if run == '3.25km':
+            weights = 'FV3-3.3km_0.10_grid_wghts.nc'
+        else:
+            logger.error(f'Run {run} not supported for {model}.\nSupported run is: "3.25km".')
+            
     elif model == 'MPAS':
         if run == '3.75km':
             weights = 'MPAS-3.75km_0.10_grid_wghts.nc'
@@ -643,12 +860,30 @@ def get_path2heightfile(model, grid_res, **kwargs):
 def get_path2targetheightfile(model, **kwargs):
     """
     """
-    if model == 'GEOS':
-        targetheightfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/GEOS/target_height.nc'
-    else:
-        targetheightfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/target_height.nc'
+
+    targetheightfile = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/target_height.nc'
     
     return targetheightfile
+
+def get_path2z0file(model, run, **kwargs):
+    """
+    """
+    if model == 'FV3':
+        path2z0file = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/{model}-{run}_OROG_sea_estimated.nc'
+    else:
+        path2z0file = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/{model}-{run}_OROG.nc'
+    
+    return path2z0file
+
+def get_path2landmask(lonlatbox, **kwargs):
+    """ Returns path to file containing a land mask.
+    """
+    if lonlatbox == [-180, 180, -30, 30]:
+        latlonstr = ''
+    else:
+        latlonstr = f'_{lonlatbox[0]}_{lonlatbox[1]}_{lonlatbox[2]}_{lonlatbox[3]}'
+        
+    return f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/land_mask{latlonstr}.nc'
 
 def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kwargs):
     """ Returns list of all raw output files from a specified DYAMOND model run corresponding to a given
@@ -663,6 +898,7 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
         temp_dir (str): path to directory for output files
     """
     
+    varnames = get_modelspecific_varnames(model)
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     raw_files = []
     out_files = []
@@ -676,12 +912,16 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'PRES': 'atm_3d_pres_ml_',
             'IWV': 'atm1_2d_ml_',
             'QI': 'atm_3d_tot_qi_dia_ml_',
-            'OLR': 'atm_2d_avg_ml_'
+            'OLR': 'atm_2d_avg_ml_',
+            'QC': 'atm_3d_tot_qc_dia_ml_',
+            'W500': 'atm_omega_3d_pl_',
+            'W': 'atm_3d_w_ml_'
                 }
         
         for var in variables:
             # filenames of raw files, grid weights and the output file
             suffix = var2suffix[var]
+            varname = varnames[var]
             if (run=='5.0km_1'):
                 stem   = '/work/ka1081/DYAMOND/ICON-5km/nwp_R2B09_lkm1006_{}'.format(suffix)
             elif (run=='5.0km_2'):
@@ -700,10 +940,10 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
 
                 raw_files.append(raw_file)
                 out_files.append(out_file)
-                if var == 'OLR' or var == 'IWV':
-                    options.append('-seltimestep,1/96/12')
+                if var == 'OLR' or var == 'IWV' or var == 'W500':
+                    options.append(f'-chname,{var},{varname} -selvar,{varname} -seltimestep,1/96/12')
                 else:
-                    options.append('')
+                    options.append(f'-chname,{var},{varname} -selvar,{varname}')
 
     elif model == 'NICAM':
         # dictionary containing filenames containing the variables
@@ -715,12 +955,15 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'IWV': 'sa_vap_atm.nc',
             'FTOASWU': 'ss_swu_toa.nc',
             'FTOASWD': 'ss_swd_toa.nc',
-            'OLR': 'sa_lwu_toa.nc'
+            'OLR': 'sa_lwu_toa.nc',
+            'QC': 'ms_qc.nc',
+            'W': 'ms_w.nc'
         }
                 
         for var in variables:
             # paths to raw files
             filename = var2filename[var]
+            varname = varnames[var]
             if (run=='3.5km'):
                 stem   = '/work/ka1081/DYAMOND/NICAM-3.5km'
             elif (run=='7.0km'):
@@ -739,10 +982,10 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
 
                 raw_files.append(raw_file)
                 out_files.append(out_file)
-                if var == 'FTOASWU' or var == 'FTOASWD' or var == 'IWV':
-                    options.append('-seltimestep,1/96/12')
+                if var == 'OLR' or var == 'IWV':
+                    options.append(f'-chname,{var},{varname} -selvar,{varname} -seltimestep,1/96/12')
                 else:
-                    options.append('')
+                    options.append(f'-chname,{var},{varname} -selvar,{varname}')
 
     elif model == 'GEOS':
         var2dirname = {
@@ -752,11 +995,15 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'H': 'H',
             'QI': 'QI',
             'IWV': 'asm',
-            'OLR': 'flx'
+            'OLR': 'flx',
+            'QC': 'QL',
+            'W': 'W',
+            'W500': 'OMEGA'
         }
         # GEOS output is one file per time step (3-hourly)
         for var in variables:
             varname = var2dirname[var]
+            varname_infile = varnames[var]
             if run == '3.0km':
                 if var == 'OLR':
                     stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/tavg/tavg_15mn_2d_{varname}_Mx' 
@@ -771,15 +1018,12 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 for h in np.arange(0, 24, 3):
                     date_str = time[i].strftime("%Y%m%d")
                     hour_str = f'{h:02d}'
-                    if var == 'OLR':
+                    if var == 'OLR' or var == 'IWV':
                         hour_file = f'DYAMOND.tavg_15mn_2d_flx_Mx.{date_str}_{hour_str}00z.nc4'
-                        opt = '-selvar,OLR'
-                    elif var == 'IWV':
-                        hour_file = f'DYAMOND.inst_15mn_2d_asm_Mx.{date_str}_{hour_str}00z.nc4'
-                        opt = '-selvar,TQV'
+                        opt = f'-chname,{var},{varname_infile} -selvar,{varname_infile}'
                     else:
                         hour_file = f'DYAMOND.inst_03hr_3d_{varname}_Mv.{date_str}_{hour_str}00z.nc4'
-                        opt = ''
+                        opt = f'-chname,{var},{varname_infile} -selvar,{varname_infile}'
                     hour_file = os.path.join(stem, hour_file)
                     date_str = time[i].strftime("%m%d")
                     out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
@@ -802,27 +1046,32 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
 #                out_files.append(out_file)
 
     elif model == 'IFS':
-        stem = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/IFS'
         var2varnumber = {
             'TEMP': 130,
             'QV': 133,
-            'SURF_PRES': 152            
+            'SURF_PRES': 152, 
+            'QI': 247,
+            'OLR': 179,
+            'IWV': 137
         }
-        var2unit = {
-            'TEMP': 'K',
-            'QV': 'kg kg^-1',
-            'SURF_PRES': 'Pa'
-        }
+#        var2unit = {
+#           'TEMP': 'K',
+#            'QV': 'kg kg^-1',
+#            'SURF_PRES': 'Pa',
+#            'QI': 'kg kg^-1',
+#            'OLR': 'W m^-2',
+#            'IWV': 'kg m^-2'
+#        }
     
         for var in variables:
-            option = f'-setattribute,{var}@unit={var2unit[var]} -chname,var{var2varnumber[var]},{var}'
+            option = f'-chname,var{var2varnumber[var]},{var}'
             for i in np.arange(time.size):
                 for h in np.arange(0, 24, 3):
                     date_str = time[i].strftime("%m%d")
                     hour_str = f'{h:02d}'
                     hour_file = f'{model}-{run}_{var}_{date_str}_{hour_str}.nc'
                     out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
-                    hour_file = os.path.join(stem, hour_file)
+                    hour_file = os.path.join(temp_dir, hour_file)
                     out_file = os.path.join(temp_dir, out_file)
                     raw_files.append(hour_file)
                     out_files.append(out_file)
@@ -842,6 +1091,7 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
         }
         
         for var in variables:
+            varname = varnames[var]
             if var == 'OLR' or var == 'IWV':
                 stem = '/mnt/lustre02/work/ka1081/DYAMOND/SAM-4km/OUT_2D'
             else:
@@ -851,8 +1101,9 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                     date_str = time[i].strftime('%Y-%m-%d')
                     hour_str = f'{h:02d}'
                     
+                    chname_option = f'-chname,{varname},{var}'
                     timeaxis_option = f'-settaxis,{date_str},{hour_str}:00:00,3h'
-                    option = ' '.join([timeaxis_option, timeunit_option, grid_option])
+                    option = ' '.join([chname_option, timeaxis_option, timeunit_option, grid_option])
                     
                     timestamp = pd.Timestamp(f'{date_str}-{hour_str}')
                     secstr = int((timestamp - ref_date).total_seconds() / 7.5)
@@ -881,18 +1132,19 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
         }
         
         for var in variables:
+            varname = varnames[var]
             for i in np.arange(time.size):
                 date_str = time[i].strftime('%Y%m%d')
                 varstr = var2dirname[var]
                 
                 if var == 'IWV' or var == 'ICI':
-                    opt = '-seltimestep,12/96/12'
+                    opt = '-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12'
                     day_file = f'{varstr}_15min_HadGEM3-GA71_N2560_{date_str}.nc'
                 elif var == 'OLR':
-                    opt = '-seltimestep,3/24/3'
+                    opt = '--chname,{varname},{var} -selvar,{varname} seltimestep,3/24/3'
                     day_file = f'{varstr}_1hr_HadGEM3-GA71_N2560_{date_str}.nc'
                 else:
-                    opt = ''
+                    opt = '-chname,{varname},{var} - selvar,{varname}'
                     day_file = f'{varstr}_3hr_HadGEM3-GA71_N2560_{date_str}.nc'
                 
                 day_file = os.path.join(stem, varstr, day_file)
@@ -905,27 +1157,68 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 out_files.append(out_file)
                 options.append(opt)
 
+    elif model == 'FV3':
+        if run == '3.25km':
+            stem = '/mnt/lustre02/work/ka1081/DYAMOND/FV3-3.25km'
+        else: 
+            print (f'Run {run} not supported for {model}.\nSupported run is "3.25km".')
+    
+        var2filename = {
+            'TEMP': 'temp',
+            'QV': 'qv',
+            'PRES': 'pres',
+            'QI': 'qi',
+            'IWV': 'intqv',
+            'OLR': 'flut'
+        }
         
-    elif model == 'MPAS':
-        if run == '3.75km':
-            stem = '/mnt/lustre02/work/ka1081/DYAMOND/MPAS-3.75km'
-        elif run == '7.5km':
-            stem = '/mnt/lustre02/work/ka1081/DYAMOND/MPAS-7.5km'
-        else:
-            print (f'Run {run} not supported for {model}.\nSupported runs are: "3.75km" and "7.5km".')
-        
-        varnames = get_modelspecific_varnames(model)
+        ref_time = pd.date_range('2016-08-01 00:00:00', '2018-09-10 00:00:00', freq='3h')
         for var in variables:
-            option = f'-setgrid,mpas:/work/ka1081/DYAMOND/PostProc/GridsAndWeights/MPAS_x1.41943042.grid.nc -selgrid,1 -selname,{varnames[var]}'
-            for i in np.arange(time.size):
+            varname = varnames[var]
+            timestep_start = np.where(ref_time == time[0])[0][0] + 1
+            timestep_con = timestep_start
+            for j, i in enumerate(np.arange(time.size)):
                 for h in np.arange(0, 24, 3):
-                    date_str = time[i].strftime("%Y-%m-%d")
+                    date_str = time[i].strftime('%m%d')
                     hour_str = f'{h:02d}'
-                    hour_file = f'history.{date_str}_{hour_str}.00.00.nc'
-                    hour_file = os.path.join(stem, hour_file)
-                    date_str = time[i].strftime("%m%d")
+                    if time[i].month == 8 and time[i].day <= 10:
+                        dir_name = '2016080100'
+                        timestep = timestep_con
+                    elif time[i].month == 8 and time[i].day <= 20:
+                        dir_name = '2016081100'
+                        timestep = timestep_con - 80
+                    elif time[i].month == 8 and time[i].day <= 30:
+                        dir_name = '2016082100'
+                        timestep = timestep_con - 160
+                    else:
+                        dir_name = '2016083100'
+                        timestep = timestep_con - 240
+
+                    hour_file = var2filename[var] + '_C3072_12288x6144.fre.nc'
+                    hour_file = os.path.join(stem, dir_name, hour_file)
                     out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
                     out_file = os.path.join(temp_dir, out_file)
+                    option = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,{timestep}'
+                    
+                    raw_files.append(hour_file)
+                    out_files.append(out_file)
+                    options.append(option)
+                    
+                    timestep_con += 1
+        
+                
+    elif model == 'MPAS':
+        varname = varnames[var]
+        for var in variables:
+            for i in np.arange(time.size):
+                for h in np.arange(0, 24, 3):
+                    date_str = time[i].strftime("%m%d")
+                    hour_str = f'{h:02d}'
+                    hour_file = f'{model}-{run}_{var}_{date_str}_{hour_str}.nc'
+                    hour_file = os.path.join(temp_dir, hour_file)
+                    out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                    out_file = os.path.join(temp_dir, out_file)
+                    option = f'-chname,{varname},{var} -selvar,{varname}'
                     raw_files.append(hour_file)
                     out_files.append(out_file)
                     options.append(option)
@@ -999,9 +1292,14 @@ def get_preprocessingfilelist(model, run, variables, time_period, temp_dir, **kw
             
         for var in variables:
             hour_con = hour_start - 3
+            # option 1: variable name in file
             option_1 = f'{var2variablename[var]}'
-            option_2 = f'{var2numzlevels[var]}'
-            for i in np.arange(time.size-1):
+            # option 2: number of vertical levels (not needed for OLR and IWV):
+            if var == 'OLR' or var == 'IWV':
+                option_2 = ''
+            else:
+                option_2 = f'{var2numzlevels[var]}'
+            for i in np.arange(time.size):
                 for h in np.arange(0, 24, 3):
                     hour_con = hour_con + 3
                     filename = var2filename[var]
@@ -1022,12 +1320,59 @@ def get_preprocessingfilelist(model, run, variables, time_period, temp_dir, **kw
                     outfile_list.append(out_file)
                     option_1_list.append(option_1)
                     option_2_list.append(option_2)
+                    
+                    
+    elif model == 'MPAS':
+        stem = '/work/ka1081/DYAMOND/MPAS-3.75km'
+        var2filename = {
+            'TEMP': 'history',
+            'PRES': 'history',
+            'QV': 'history',
+            'QI': 'history',
+            'IWV': 'diag',
+            'OLR': 'diag'
+        }
+        varnames = get_modelspecific_varnames(model)
+        
+        for var in variables:
+            for i in np.arange(time.size):
+                for h in np.arange(0, 24, 3):
+                    date_str = time[i].strftime("%Y-%m-%d")
+                    hour_str = f'{h:02d}'
+                    in_file = f'{var2filename[var]}.{date_str}_{hour_str}.00.00.nc'
+                    date_str = time[i].strftime("%m%d")
+                    temp_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_1.nc'
+                    out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}.nc'
+                    in_file = os.path.join(stem, in_file)
+                    temp_file = os.path.join(temp_dir, temp_file)
+                    out_file = os.path.join(temp_dir, out_file)
+                    option_selvar = varnames[var]
+
+                    infile_list.append(in_file)
+                    tempfile_list.append(temp_file)
+                    outfile_list.append(out_file)
+                    option_1_list.append(option_selvar)
     else:
         logger.error('The model specified for preprocessing does not exist or has not been implemented yet.')
         
     return infile_list, tempfile_list, outfile_list, option_1_list, option_2_list
                     
-
+def get_preprocessing_ARPEGE_1_filelist(time_period, temp_dir):
+    """
+    """
+    time = pd.date_range(time_period[0], time_period[1], freq='1D')
+    infile_list = []
+    tempfile_list = []
+    
+    variables = ['2D', '3D']
+    
+    for var in variables:
+        for i in np.arange(time.size):
+            for h in np.arange(3, 25, 3):
+                date_str = time[i].strftime("%Y%m%d")
+                hour_str = f'{h:02d}'+'00'
+                
+    
 def get_mergingfilelist(model, run, variables, time_period, vinterp, temp_dir, data_dir, **kwargs):
     """ Returns a list of filenames of horizontally interpolated DYAMOND output needed for time merging.
     For each variable, the list contains a list of filenames. 
@@ -1049,7 +1394,7 @@ def get_mergingfilelist(model, run, variables, time_period, vinterp, temp_dir, d
     
     for v, var in enumerate(variables):
         infile_list.append([])
-        if vinterp == 1 and (model == 'GEOS' or model == 'IFS'):
+        if vinterp == 1 and (model == 'GEOS' or model == 'IFS' or model == 'FV3'):
             outfile_name = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date}-{end_date}.nc'
         else:
             outfile_name = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
@@ -1057,22 +1402,28 @@ def get_mergingfilelist(model, run, variables, time_period, vinterp, temp_dir, d
         outfile_list.append(outfile_name)
         
         for i in np.arange(time.size):
+            #if model == 'FV3':
+            #    date_str = time[i].strftime("%Y%m%d")
+            #else:
             date_str = time[i].strftime("%m%d")
-            if vinterp == 1 and (model == 'GEOS' or model == 'IFS'):
+            if vinterp == 1 and (model == 'GEOS' or model == 'IFS' or model == 'FV3'):
                 for h in np.arange(0, 24, 3):
-                    infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'     
-            elif (vinterp == 0 and model == 'GEOS') or (vinterp == 0 and model == 'IFS') or model == 'SAM' or var == 'RH':
+                    infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'
+                    infile_name = os.path.join(temp_dir, infile_name)
+                    infile_list[v].append(infile_name)
+            elif (vinterp == 0 and model == 'GEOS') or (vinterp == 0 and model == 'IFS') or model == 'SAM' or model == 'MPAS' or model == 'FV3' or var == 'RH':
                 for h in np.arange(0, 24, 3):
-                    infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'    
+                    infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'
+                    infile_name = os.path.join(temp_dir, infile_name)
+                    infile_list[v].append(infile_name)
             else:
                 infile_name = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
-                
-            infile_name = os.path.join(temp_dir, infile_name)
-            infile_list[v].append(infile_name)
+                infile_name = os.path.join(temp_dir, infile_name)
+                infile_list[v].append(infile_name)
      
     return infile_list, outfile_list
 
-def get_averagingfilelist(model, run, variables, data_dir, time_period, **kwargs):
+def get_averagingfilelist(model, run, variables, data_dir, time_period, vinterp, **kwargs):
     """ Returns list of filenames of horizontally interpolated and merged as well as 
     list of filenames of horizontally interpolated, merged and temporally averaged 
     DYAMOND output files needed for time averaging. 
@@ -1094,7 +1445,7 @@ def get_averagingfilelist(model, run, variables, data_dir, time_period, **kwargs
     
     for var in variables:
         option = ('')
-        if model == 'GEOS' or model == 'IFS':
+        if vinterp == 1 and (model == 'GEOS' or model == 'IFS' or model == 'FV3'):
             infile_name = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date}-{end_date}.nc'
             outfile_name = f'{model}-{run}_{var}_hinterp_vinterp_timeaverage_{start_date}-{end_date}.nc'
         else:
@@ -1110,7 +1461,7 @@ def get_averagingfilelist(model, run, variables, data_dir, time_period, **kwargs
     return infile_list, outfile_list, option_list
  
     
-def get_sellonlatboxfilelist(model, run, variables, data_dir, time_period, lonlatbox, **kwargs):
+def get_sellonlatboxfilelist(model, run, variables, data_dir, time_period, lonlatbox, vinterp, **kwargs):
     """ Returns list of filenames needed for the selection of a lat-lon box. Input files are horizontally interpolated
     temporally averaged fields. Output filenames contain boundaries of the lat-lon box.
     
@@ -1132,7 +1483,7 @@ def get_sellonlatboxfilelist(model, run, variables, data_dir, time_period, lonla
         
     for var in variables:
         option = ('')
-        if model == 'GEOS' or model == 'IFS':
+        if (model == 'GEOS' or model == 'IFS' or model == 'FV3') and vinterp == 1:
             infile_name = f'{model}-{run}_{var}_hinterp_vinterp_timeaverage_{start_date}-{end_date}.nc'
             outfile_name = f'{model}-{run}_{var}_hinterp_vinterp_timeaverage_{start_date}-{end_date}_{lonlatstr}.nc'
         else:
@@ -1213,7 +1564,7 @@ def get_vinterpolation_per_timestep_filelist(model, run, variables, time_period,
     
     return infile_list, outfile_list, heightfile
 
-def get_height_calculation_filelist(model, run, time_period, data_dir, **kwargs):
+def get_height_calculation_filelist(model, run, time_period, data_dir, temp_dir, **kwargs):
     """ Returns list of filenames needed for the calculation of model level heights from model level
     pressure and temperature. Output files consist of one file for every timestep.
     
@@ -1238,7 +1589,7 @@ def get_height_calculation_filelist(model, run, time_period, data_dir, **kwargs)
         for h in np.arange(0, 24, 3):
             hour_str = f'{h:02d}'
             outfile = f'{model}-{run}_H_hinterp_{date_str}_{hour_str}.nc'
-            outfile = os.path.join(data_dir, model, outfile)
+            outfile = os.path.join(temp_dir, outfile)
             outfile_list.append(outfile)
     
     return pres_file, temp_file, outfile_list
@@ -1260,10 +1611,10 @@ def get_rhcalculation_filelist(model, run, time_period, data_dir, **kwargs):
     
     variables = ['TEMP', 'QV', 'PRES']
     for var in variables:
-        if model == 'IFS' and var == 'PRES':
-            file = f'{model}-{run}_SURF_{var}_hinterp_merged_{start_date}-{end_date}.nc'
-        else:
-            file = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
+#        if model == 'IFS' and var == 'PRES':
+#            file = f'{model}-{run}_SURF_{var}_hinterp_merged_{start_date}-{end_date}.nc'
+
+        file = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
         file = os.path.join(data_dir, model, file)
         infile_list.append(file)
     
@@ -1275,7 +1626,11 @@ def get_olrcalculation_filelist(model, run, time_period, data_dir, **kwargs):
     at TOA fro the NICAM model.
     
     Parameters:
-    
+        model (str): name of model
+        run (str): name of model run
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
+        data_dir (str): path to directory to save files      
     """
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
@@ -1290,7 +1645,40 @@ def get_olrcalculation_filelist(model, run, time_period, data_dir, **kwargs):
         infile_list.append(file)
         
     return infile_list
+
+def get_samplefilelist(num_samples_tot, model, run, variables, time_period, lonlatbox, data_dir, vinterp, experiment=None, **kwargs):
+    """ Returns filelist needed to perform Monte Carlo Sampling of Profiles.
+    """    
+    time = pd.date_range(time_period[0], time_period[1], freq='1D')
+    start_date = time[0].strftime("%m%d")
+    end_date = time[-1].strftime("%m%d")
+    if lonlatbox[:2] == [-180, 180]:
+        latlonstr = ''
+    else:
+        latlonstr = f'_{lonlatbox[0]}_{lonlatbox[1]}_{lonlatbox[2]}_{lonlatbox[3]}'
+    if experiment is not None:
+        expstr = f'_{str(experiment)}'
+        print(expstr)
+    else:
+        expstr = ''
     
+    infile_list = []
+    outfile_list = []
+    
+    for var in variables:
+        if vinterp:
+            file = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date}-{end_date}.nc'
+        else: 
+            file = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
+        file = os.path.join(data_dir, model, file)
+        infile_list.append(file) 
+    
+    for var in variables + ['IWV', 'lon', 'lat']:
+        outfile = f'{model}-{run}_{var}_sample_{num_samples_tot}_{start_date}-{end_date}{latlonstr}{expstr}.nc'
+        outfile = os.path.join(data_dir, model, 'random_samples', outfile)
+        outfile_list.append(outfile)
+    
+    return infile_list, outfile_list
     
 def get_IFS_pressure_scaling_parameters():
     a = np.array([0,0,3.757813,22.835938,62.78125,122.101563,202.484375,302.476563,424.414063,568.0625,734.992188,926.507813,1143.25,1387.546875,1659.476563,1961.5,2294.242188,2659.140625,3057.265625,3489.234375,3955.960938,4457.375,4993.796875,5564.382813,6168.53125,6804.421875,7470.34375,8163.375,8880.453125,9617.515625,10370.17578,11133.30469,11901.33984,12668.25781,13427.76953,14173.32422,14898.45313,15596.69531,16262.04688,16888.6875,17471.83984,18006.92578,18489.70703,18917.46094,19290.22656,19608.57227,19874.02539,20087.08594,20249.51172,20361.81641,20425.71875,20442.07813,20412.30859,20337.86328,20219.66406,20059.93164,19859.39063,19620.04297,19343.51172,19031.28906,18685.71875,18308.43359,17901.62109,17467.61328,17008.78906,16527.32227,16026.11523,15508.25684,14975.61523,14432.13965,13881.33106,13324.66895,12766.87305,12211.54785,11660.06738,11116.66211,10584.63184,10065.97852,9562.682617,9076.400391,8608.525391,8159.354004,7727.412109,7311.869141,6911.870605,6526.946777,6156.074219,5798.344727,5452.990723,5119.89502,4799.149414,4490.817383,4194.930664,3911.490479,3640.468262,3381.743652,3135.119385,2900.391357,2677.348145,2465.770508,2265.431641,2076.095947,1897.519287,1729.448975,1571.622925,1423.770142,1285.610352,1156.853638,1037.201172,926.34491,823.967834,729.744141,643.339905])
@@ -1379,9 +1767,11 @@ def latlonfield_to_netCDF(latitude, longitude, field, varname, varunit, outname,
         lon = f.createVariable('lon','f4',('lon',))
         
         if time_dim:
-            time = f.createDimension('time', 1)
-        if time_var is not None:
-            time = f.createVariable('time', 'f4', ('time',))
+            if time_var is not None:
+                time = f.createDimension('time', len(time_var))
+                time = f.createVariable('time', 'f4', ('time',))
+            else:
+                time = f.createDimension('time', 1)
 
         lat.units = 'degrees north'
         lon.units= 'degrees east'
@@ -1402,7 +1792,37 @@ def latlonfield_to_netCDF(latitude, longitude, field, varname, varunit, outname,
             f[varname][:,:]=field[:,:] 
         v.units = varunit
         
+def array2D_to_netCDF(array, varname, varunit, dimensionvars, dimensionnames, outname, overwrite=True):
+    """ Saves a 1D-Array to a NetCDF file.
+    
+    Parameters:
+        vector (1D Array): Vector with variable to save
+        varname (string): Name of variable to save
+        varunit (string): Unit of variable to save
+        dimensionvar (Tuple of 1D Arrays): Grid the variable is given on (e.g. latitudes, longitudes, altitudes) 
+        dimensionname (Tuple of strings): Name of dimension associated with vector (e.g. 'lat', 'lon', 'height')
+        outname (string): Name of output file
+        overwrite (boolean): If True, exisiting files with the same filename are overwritten
+        
+    """
+    if (os.path.isfile(outname)) and overwrite:
+        os.remove(outname)
+    elif (os.path.isfile(outname)) and overwrite==False:
+        print('File {} exists. Not overwriting.'.format(outname))
+        return
+    
+    with Dataset(outname, 'w') as f:
+        dim0 = f.createDimension(dimensionnames[0], len(dimensionvars[0]))
+        dimvar0 = f.createVariable(dimensionnames[0], 'f4', (dimensionnames[0],))    
+        dimvar0[:] = dimensionvars[0]
+        
+        dim1 = f.createDimension(dimensionnames[1], len(dimensionvars[1]))
+        dimvar1 = f.createVariable(dimensionnames[1], 'f4', (dimensionnames[1],))    
+        dimvar1[:] = dimensionvars[1]
 
+        f.createVariable(varname, 'f4', dimensions=dimensionnames)
+        f[varname][:,:] = array[:,:]
+        
 def vector_to_netCDF(vector, varname, varunit, dimensionvar, dimensionname, outname, overwrite=True):
     """ Saves a 1D-Array to a NetCDF file.
     
