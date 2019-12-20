@@ -14,8 +14,9 @@ from scipy.interpolate import interp1d
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 def config():
     """ Reads specifications for processing from confing.json and returns a dictionary
@@ -95,7 +96,7 @@ def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwar
         numthreads (int): Number of OpenMP threads for cdo
     """
     gridfile = '/work/ka1081/DYAMOND/PostProc/GridsAndWeights/MPAS-3.75km_gridinfo.nc'
-    cmd_1 = f'cdo -P 4 -f nc4 setattribute,*@axis="txz" -selname,{option_selvar} {infile} {tempfile}'
+    cmd_1 = f'cdo -P 4 setattribute,*@axis="txz" -selname,{option_selvar} {infile} {tempfile}'
     cmd_2 = f'cdo -P 4 setgrid,mpas:{gridfile} {tempfile} {outfile}'
     cmd_3 = f'rm {tempfile}'
     
@@ -303,25 +304,25 @@ def interpolate_vertically_per_timestep(infiles, outfiles, height_file, target_h
         model (str): Name of model
         variables (list of str): List of variables to interpolate       
     """
-    varnames = get_modelspecific_varnames(model)
+    #varnames = get_modelspecific_varnames(model)
     units = get_variable_units()
     
     with Dataset(target_height_file) as dst:
         target_height = dst.variables['target_height'][:].filled(np.nan)
         
     with Dataset(height_file) as dsh:
-        heightname = varnames['H']
+        heightname = 'H'
         var_height = dsh.variables[heightname][timestep].filled(np.nan)
         
     for i, var in enumerate(variables):
         infile = infiles[i]
         outfile = outfiles[i]
-        varname = varnames[var]
+        #varname = varnames[var]
         
         with Dataset(infile) as ds:
             lat = ds.variables['lat'][:].filled(np.nan)
             lon = ds.variables['lon'][:].filled(np.nan)
-            field = ds.variables[varname][timestep].filled(np.nan)
+            field = ds.variables[var][timestep].filled(np.nan)
             
         nheight, nlat, nlon = field.shape
         ntargetheight = len(target_height)
@@ -341,6 +342,27 @@ def interpolate_vertically_per_timestep(infiles, outfiles, height_file, target_h
         # save interpolated field to netCDF file
         latlonheightfield_to_netCDF(target_height, lat, lon, field_interp,\
                                     var, units[var], outfile, time_dim=True, time_var=timestep*3, overwrite=True)  
+        
+def interpolation_to_halflevels_per_timestep(infile, outfile, timestep, model, run, variables, time_period, data_dir, temp_dir, **kwargs):
+    """ Perform vertical interpolation for a field given on full model levels to half levels for one timestep included
+    in the input file. 
+    
+    Parameters:
+    
+    """
+    var = variables[0]
+    varname = get_modelspecific_varnames(model)[var]
+    
+    with Dataset(infile) as ds:
+        field = np.squeeze(ds.variables[varname][timestep].filled(np.nan))
+        lat = ds.variables['lat'][:].filled(np.nan)
+        lon = ds.variables['lon'][:].filled(np.nan)
+    
+    field_interp = field[:-1] + 0.5 * np.diff(field, axis=0)    
+    field_interp = np.expand_dims(field_interp, 0)
+    height = np.arange(field_interp.shape[1])
+    
+    latlonheightfield_to_netCDF(height, lat, lon, field_interp, var, '[]', outfile, time_dim=True, time_var=timestep*3, overwrite=True)
             
 def calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep, temp_dir, model, run, time_period, **kwargs):
     """ Calculate pressure at IFS model levels from surface pressure for one timestep contained in 
@@ -637,9 +659,10 @@ def get_modelspecific_varnames(model):
             'QI': 'QI_DIA',
             'OLR': 'ATHB_T',
             'IWV': 'TQV_DIA',
-            'QC': 'tot_qc_dia',
+            'QC': 'param212.1.0',
             'W500': 'omega',
-            'W': 'w'
+            'W': 'wz',
+            'WHL': 'W'
         }
     elif model == 'NICAM':
         varname = {
@@ -652,8 +675,8 @@ def get_modelspecific_varnames(model):
             'OLR': 'sa_lwu_toa',
             'FTOASWD': 'ss_swd_toa',
             'FTOASWU': 'ss_swu_toa',
-            'QC': 'ms_qc',
-            'W': 'ms_w'
+            'QC': 'QC',
+            'W': 'W'
         }
     elif model == 'GEOS':
         varname = {
@@ -665,7 +688,7 @@ def get_modelspecific_varnames(model):
             'QI': 'QI',
             'OLR': 'OLR',
             'IWV': 'TQV',
-            'QC': 'QC',
+            'QC': 'QL',
             'W': 'W', 
             'W500': 'OMEGA'
         }    
@@ -711,7 +734,9 @@ def get_modelspecific_varnames(model):
             'QI': 'qi',
             'IWV': 'intqv',
             'OLR': 'flut',
-            'H': 'H'
+            'H': 'H',
+            'W': 'w',
+            'QC': 'ql'
         }
         
     elif model == 'MPAS':
@@ -722,7 +747,9 @@ def get_modelspecific_varnames(model):
             'PRES': 'pressure',
             'RH': 'RH',
             'IWV': 'vert_int_qv',
-            'OLR': 'aclwnett'
+            'OLR': 'aclwnett',
+            'W': 'w',
+            'QC': 'qc'
         }
 
     else:
@@ -741,10 +768,12 @@ def get_variable_units():
         'PRES': 'Pa',
         'RH': '-',
         'QI': 'kg kg**-1',
+        'QC': 'kg kg**-1',
         'OLR': 'W m**-2',
         'IWV': 'kg m**-2',
         'ICI': 'kg m**-2',
-        'H': 'm'
+        'H': 'm',
+        'W': 'm s**-1'
     }
     
     return varunit        
@@ -941,9 +970,9 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 raw_files.append(raw_file)
                 out_files.append(out_file)
                 if var == 'OLR' or var == 'IWV' or var == 'W500':
-                    options.append(f'-chname,{var},{varname} -selvar,{varname} -seltimestep,1/96/12')
+                    options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,1/96/12')
                 else:
-                    options.append(f'-chname,{var},{varname} -selvar,{varname}')
+                    options.append(f'-chname,{varname},{var} -selvar,{varname}')
 
     elif model == 'NICAM':
         # dictionary containing filenames containing the variables
@@ -983,9 +1012,9 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 raw_files.append(raw_file)
                 out_files.append(out_file)
                 if var == 'OLR' or var == 'IWV':
-                    options.append(f'-chname,{var},{varname} -selvar,{varname} -seltimestep,1/96/12')
+                    options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,1/96/12')
                 else:
-                    options.append(f'-chname,{var},{varname} -selvar,{varname}')
+                    options.append(f'-chname,{varname},{var} -selvar,{varname}')
 
     elif model == 'GEOS':
         var2dirname = {
@@ -1020,10 +1049,10 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                     hour_str = f'{h:02d}'
                     if var == 'OLR' or var == 'IWV':
                         hour_file = f'DYAMOND.tavg_15mn_2d_flx_Mx.{date_str}_{hour_str}00z.nc4'
-                        opt = f'-chname,{var},{varname_infile} -selvar,{varname_infile}'
+                        opt = f'-chname,{varname_infile},{var} -selvar,{varname_infile}'
                     else:
                         hour_file = f'DYAMOND.inst_03hr_3d_{varname}_Mv.{date_str}_{hour_str}00z.nc4'
-                        opt = f'-chname,{var},{varname_infile} -selvar,{varname_infile}'
+                        opt = f'-chname,{varname_infile},{var} -selvar,{varname_infile}'
                     hour_file = os.path.join(stem, hour_file)
                     date_str = time[i].strftime("%m%d")
                     out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
@@ -1169,7 +1198,9 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'PRES': 'pres',
             'QI': 'qi',
             'IWV': 'intqv',
-            'OLR': 'flut'
+            'OLR': 'flut',
+            'W': 'w',
+            'QC': 'ql'
         }
         
         ref_time = pd.date_range('2016-08-01 00:00:00', '2018-09-10 00:00:00', freq='3h')
@@ -1208,8 +1239,8 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
         
                 
     elif model == 'MPAS':
-        varname = varnames[var]
         for var in variables:
+            varname = varnames[var]
             for i in np.arange(time.size):
                 for h in np.arange(0, 24, 3):
                     date_str = time[i].strftime("%m%d")
@@ -1329,6 +1360,8 @@ def get_preprocessingfilelist(model, run, variables, time_period, temp_dir, **kw
             'PRES': 'history',
             'QV': 'history',
             'QI': 'history',
+            'QC': 'history',
+            'W': 'history',
             'IWV': 'diag',
             'OLR': 'diag'
         }
@@ -1411,7 +1444,7 @@ def get_mergingfilelist(model, run, variables, time_period, vinterp, temp_dir, d
                     infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'
                     infile_name = os.path.join(temp_dir, infile_name)
                     infile_list[v].append(infile_name)
-            elif (vinterp == 0 and model == 'GEOS') or (vinterp == 0 and model == 'IFS') or model == 'SAM' or model == 'MPAS' or model == 'FV3' or var == 'RH':
+            elif (vinterp == 0 and model == 'GEOS') or (vinterp == 0 and model == 'IFS') or model == 'SAM' or model == 'MPAS' or model == 'FV3' or var == 'RH' or var == 'WHL':
                 for h in np.arange(0, 24, 3):
                     infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'
                     infile_name = os.path.join(temp_dir, infile_name)
@@ -1602,6 +1635,8 @@ def get_rhcalculation_filelist(model, run, time_period, data_dir, **kwargs):
     Parameters:
         model (str): name of model
         run (str): name of model run
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
         data_dir (str): path to directory to save files    
     """
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
@@ -1619,6 +1654,37 @@ def get_rhcalculation_filelist(model, run, time_period, data_dir, **kwargs):
         infile_list.append(file)
     
     return infile_list
+
+def get_interpolationtohalflevels_filelist(model, run, time_period, variables, data_dir, temp_dir, **kwargs):
+    """ Return filelist needed for interpolation from full model levels to half levels.
+    
+    Parameters:
+        model (str): name of model
+        run (str): name of model run
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
+        variables (list of str): list of variable names
+        data_dir (str): path to directory of input file
+        temp_dir (str): path to directory for output files
+    """
+    time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
+    start_date = time[0].strftime("%m%d")
+    end_date = time[-1].strftime("%m%d")
+    infiles = []
+    outfiles = []
+    
+    for var in variables:
+        for timestep in time:
+            date_str = timestep.strftime('%m%d')
+            hour_str = timestep.strftime('%H')
+            infile = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
+            infile = os.path.join(data_dir, model, infile)
+            infiles.append(infile)
+            outfile = f'{model}-{run}_{var}HL_{date_str}_{hour_str}_hinterp.nc'
+            outfile = os.path.join(temp_dir, outfile)
+            outfiles.append(outfile)
+        
+    return infiles, outfiles
 
 
 def get_olrcalculation_filelist(model, run, time_period, data_dir, **kwargs):
