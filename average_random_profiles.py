@@ -28,15 +28,15 @@ import processing_tools as ptools
 import analysis_tools as atools
 from moisture_space import utils
 
-model = 'ICON'
-run = '2.5km'
-time_period = ['0830', '0908']
+model = 'NICAM'
+run = '3.5km'
+time_period = ['0830', '0908'] #['0802', '0813']
 variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
-variables_2D = ['OLR', 'IWV']
+variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC']
 datapath = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/random_samples/'
 filenames = '{}-{}_{}_sample_{}_{}-{}{}.nc'
-num_profiles = int(1 * 1e6)
-experiments = [0]#np.arange(10)
+num_profiles = int(10 * 1e6) #10 * 1e6
+experiments = np.arange(0, 10)
 perc_values = np.arange(0, 100.5, 1.0)
 iwv_bin_bnds = np.arange(0, 101, 1)
 ic_thres = {
@@ -48,18 +48,18 @@ ic_thres = {
 if len(experiments) == 1:
     filename = filenames.format(model, run, variables_3D[0], num_profiles, time_period[0], time_period[1], '')
 else:
-    filename = filenames.format(model, run, variables_3D[0], num_profiles, time_period[0], time_period[1], '_0')
+    filename = filenames.format(model, run, variables_3D[0], num_profiles, time_period[0], time_period[1], f'_{experiments[0]}')
     
 filename = join(datapath, filename)
 with(Dataset(filename)) as ds:
     height = ds.variables['height'][:].filled(np.nan)
 num_levels = len(height)
 profiles_sorted = {}
-bin_count = np.zeros(len(iwv_bin_bnds) - 1)
-bins = range(len(iwv_bin_bnds) - 1) 
+bins = np.arange(len(iwv_bin_bnds) - 1) 
 
 for exp in experiments:
     print(exp)
+    bin_count = np.zeros(len(iwv_bin_bnds) - 1)
     for var in variables_3D+variables_2D:
         print(var)
         if model == 'ICON' and var == 'W':
@@ -113,10 +113,9 @@ for exp in experiments:
     profiles_bin_max = {}
     profiles_bin_min = {}
     
-    # Binning to IWV bins
+    # Binning to IWV 
     bin_idx = np.digitize(profiles_sorted['IWV'], iwv_bin_bnds)
     bin_count = bin_count + np.asarray([len(np.where(bin_idx == b)[0]) for b in bins])
-    print(bin_count)
 
     for var in variables_2D+['UTH', 'IWP']:
         profiles_bin_mean[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
@@ -281,14 +280,14 @@ for exp in experiments:
     with open(join(datapath, outname_perc), "wb" ) as outfile:
         pickle.dump(perc, outfile) 
         
-    bins = {}
-    bins['mean'] = profiles_bin_mean
-    bins['std'] = profiles_bin_std
-    bins['median'] = profiles_bin_median
-    bins['quart25'] = profiles_bin_quart25
-    bins['quart75'] = profiles_bin_quart75
-    bins['min'] = profiles_bin_min
-    bins['max'] = profiles_bin_max
-    bins['count'] = bin_count
+    binned = {}
+    binned['mean'] = profiles_bin_mean
+    binned['std'] = profiles_bin_std
+    binned['median'] = profiles_bin_median
+    binned['quart25'] = profiles_bin_quart25
+    binned['quart75'] = profiles_bin_quart75
+    binned['min'] = profiles_bin_min
+    binned['max'] = profiles_bin_max
+    binned['count'] = bin_count
     with open(join(datapath, outname_bins), "wb" ) as outfile:
-        pickle.dump(bins, outfile) 
+        pickle.dump(binned, outfile) 
