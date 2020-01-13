@@ -13,6 +13,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed, wait # for lau
 from scipy.interpolate import interp1d
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
+from moisture_space import utils
 
 #logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -351,7 +352,7 @@ def interpolation_to_halflevels_per_timestep(infile, outfile, timestep, model, r
     
     """
     var = variables[0]
-    varname = get_modelspecific_varnames(model)[var]
+    varname = var#get_modelspecific_varnames(model)[var]
     
     with Dataset(infile) as ds:
         field = np.squeeze(ds.variables[varname][timestep].filled(np.nan))
@@ -539,7 +540,7 @@ def select_random_profiles(num_samples_tot, infiles, outfiles, heightfile, landm
         lonlatbox (list of floats): Boundaries of lon-lat box to select [lonmin, lonmax, latmin, latmax]
         vinterp (boolean): True, if data is already interpolated vertically       
     """
-    variables_2D = ['OLR', 'IWV', 'lat', 'lon']
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'lat', 'lon', 'timestep']
     
     # read height, latitude and longitude information
     height = atools.read_var(heightfile, model, 'target_height')
@@ -574,6 +575,7 @@ def select_random_profiles(num_samples_tot, infiles, outfiles, heightfile, landm
     profiles = {}    
     global_field = {}
     profiles_sorted = {} 
+    profiles['timestep'] = np.ones((num_samples_tot)) * np.nan
     global_field['lon'], global_field['lat'] = np.meshgrid(lon_reg, lat_reg)
     for i, var in enumerate(variables + ['lat', 'lon']):        
         if var in variables_2D:
@@ -588,14 +590,24 @@ def select_random_profiles(num_samples_tot, infiles, outfiles, heightfile, landm
         for i, var in enumerate(variables):
             print(var)
             if var in variables_2D:
-                global_field[var] = np.squeeze(
-                    atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=~vinterp)
-                )[lat_ind][:, lon_ind]
-            else:  
-                global_field[var] = np.squeeze(
-                    atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=~vinterp)
-                )[:, lat_ind, :][:, :, lon_ind]
-        
+                try:
+                    global_field[var] = np.squeeze(
+                        atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=~vinterp)
+                    )[lat_ind][:, lon_ind]
+                except:
+                    global_field[var] = np.squeeze(
+                        atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=vinterp)
+                    )[lat_ind][:, lon_ind]
+            else: 
+                try:
+                    global_field[var] = np.squeeze(
+                        atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=~vinterp)
+                    )[:, lat_ind, :][:, :, lon_ind]
+                except:
+                    global_field[var] = np.squeeze(
+                        atools.read_var_timestep(infiles[i], model, var, timestep, specific_names=vinterp)
+                    )[:, lat_ind, :][:, :, lon_ind]                 
+      
         # Add grid cells to mask for which the lowermost value is NaN 
         # (e.g. some coastal grid cells in NICAM)
         nan_mask_idx = np.where(
@@ -609,6 +621,7 @@ def select_random_profiles(num_samples_tot, infiles, outfiles, heightfile, landm
         # find start and end indices for this timestep in the full array
         start = timestep * num_samples_timestep
         end = (timestep + 1) * num_samples_timestep
+        profiles['timestep'][start:end] = timestep
         
         # Select random indices from fields for all variables
         for var in variables + ['lat', 'lon']:
@@ -619,12 +632,12 @@ def select_random_profiles(num_samples_tot, infiles, outfiles, heightfile, landm
                 print(np.where(np.isnan(profiles[var][:, start:end]))[0])
                 
     # calculate IWV
-    profiles['IWV'] = atools.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)           
+    profiles['IWV'] = utils.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)
     # get indices to sort by IWV
     IWV_sort_idx = np.argsort(profiles['IWV'])
         
     # sort by IWV
-    for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
+    for i, var in enumerate(variables + ['IWV', 'lon', 'lat', 'timestep']):
         if var in variables_2D:
             profiles_sorted[var] = profiles[var][IWV_sort_idx]
             vector_to_netCDF(
@@ -634,7 +647,10 @@ def select_random_profiles(num_samples_tot, infiles, outfiles, heightfile, landm
             profiles_sorted[var] = profiles[var][:, IWV_sort_idx]
             array2D_to_netCDF(
                 profiles_sorted[var], var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outfiles[i], overwrite=True
-            ) 
+            )
+    
+
+    
     
 def get_modelspecific_varnames(model):
     """ Returns dictionary with variable names for a specific model.
@@ -659,10 +675,11 @@ def get_modelspecific_varnames(model):
             'QI': 'QI_DIA',
             'OLR': 'ATHB_T',
             'IWV': 'TQV_DIA',
-            'QC': 'param212.1.0',
+            'QC': 'QC_DIA',#'param212.1.0',
             'W500': 'omega',
-            'W': 'wz',
-            'WHL': 'W'
+            'W': 'W',#'wz', 
+            'WHL': 'W',
+            'STOA': 'ASOB_T'
         }
     elif model == 'NICAM':
         varname = {
@@ -676,7 +693,10 @@ def get_modelspecific_varnames(model):
             'FTOASWD': 'ss_swd_toa',
             'FTOASWU': 'ss_swu_toa',
             'QC': 'QC',
-            'W': 'W'
+            'W': 'W',
+            'SUTOA': 'ss_swu_toa',
+            'SDTOA': 'ss_swd_toa',
+            'OLRC': 'ss_lwu_toa_c'
         }
     elif model == 'GEOS':
         varname = {
@@ -697,6 +717,8 @@ def get_modelspecific_varnames(model):
             'TEMP': 'TEMP',
             'QV': 'QV',
             'QI': 'QI',
+            'QC': 'param83.1.0',
+            'OMEGA': 'param120.128.192',
             'PRES': 'PRES',
             'RH': 'RH',
             'OLR': 'OLR',
@@ -711,7 +733,9 @@ def get_modelspecific_varnames(model):
             'RH': 'RH',
             'QI': 'QI',
             'IWV': 'PW',
-            'OLR': 'LWNTA'
+            'OLR': 'LWNTA',
+            'QC': 'QC',
+            'W': 'W'
         }
     elif model == 'UM':
         varname = {
@@ -722,7 +746,10 @@ def get_modelspecific_varnames(model):
             'QI': 'mass_fraction_of_cloud_ice_in_air',
             'OLR': 'toa_outgoing_longwave_flux',
             'IWV': 'atmosphere_water_vapor_content',
-            'ICI': 'atmosphere_mass_content_of_cloud_ice'
+            'ICI': 'atmosphere_mass_content_of_cloud_ice',
+            'QC': 'mass_fraction_of_cloud_liquid_water_in_air',
+            'W': 'upward_air_velocity'
+           
         }
         
     elif model == 'FV3':
@@ -773,7 +800,12 @@ def get_variable_units():
         'IWV': 'kg m**-2',
         'ICI': 'kg m**-2',
         'H': 'm',
-        'W': 'm s**-1'
+        'W': 'm s**-1',
+        'OMEGA': 'Pa s**-1',
+        'STOA': 'W m**-2',
+        'SUTOA': 'W m**-2',
+        'SDTOA': 'W m**-2',
+        'OLRC': 'W m**-2'
     }
     
     return varunit        
@@ -944,7 +976,8 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'OLR': 'atm_2d_avg_ml_',
             'QC': 'atm_3d_tot_qc_dia_ml_',
             'W500': 'atm_omega_3d_pl_',
-            'W': 'atm_3d_w_ml_'
+            'W': 'atm_3d_w_ml_',
+            'STOA': 'atm_2d_avg_ml_'
                 }
         
         for var in variables:
@@ -970,7 +1003,7 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 raw_files.append(raw_file)
                 out_files.append(out_file)
                 if var == 'OLR' or var == 'IWV' or var == 'W500':
-                    options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,1/96/12')
+                    options.append(f'-chname,{varname},{var} -selvar,{varname}')# -seltimestep,1/96/12')
                 else:
                     options.append(f'-chname,{varname},{var} -selvar,{varname}')
 
@@ -982,11 +1015,12 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'PRES': 'ms_pres.nc',
             'QI': 'ms_qi.nc',
             'IWV': 'sa_vap_atm.nc',
-            'FTOASWU': 'ss_swu_toa.nc',
-            'FTOASWD': 'ss_swd_toa.nc',
             'OLR': 'sa_lwu_toa.nc',
             'QC': 'ms_qc.nc',
-            'W': 'ms_w.nc'
+            'W': 'ms_w.nc',
+            'SUTOA': 'ss_swu_toa.nc',
+            'SDTOA': 'ss_swd_toa.nc',
+            'OLRC': 'ss_lwu_toa_c.nc'
         }
                 
         for var in variables:
@@ -1011,7 +1045,7 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
 
                 raw_files.append(raw_file)
                 out_files.append(out_file)
-                if var == 'OLR' or var == 'IWV':
+                if var in ['OLR', 'IWV', 'OLRC', 'SUTOA', 'SDTOA']:
                     options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,1/96/12')
                 else:
                     options.append(f'-chname,{varname},{var} -selvar,{varname}')
@@ -1081,7 +1115,9 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'SURF_PRES': 152, 
             'QI': 247,
             'OLR': 179,
-            'IWV': 137
+            'IWV': 137,
+            'QC': 246,
+            'OMEGA': 120
         }
 #        var2unit = {
 #           'TEMP': 'K',
@@ -1116,7 +1152,9 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'PRES': '_PP',
             'QI': '_QI',
             'IWV': '.PW.2D',
-            'OLR': '.LWNTA.2D'
+            'OLR': '.LWNTA.2D',
+            'QC': '_QC',
+            'W': '_W'
         }
         
         for var in variables:
@@ -1157,7 +1195,9 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
             'IWV': 'prw',
             'QI': 'cli',
             'ICI': 'clivi',
-            'OLR': 'rlut' 
+            'OLR': 'rlut',
+            'QC': 'clw',
+            'W': 'wa'
         }
         
         for var in variables:
@@ -1167,13 +1207,13 @@ def get_interpolationfilelist(model, run, variables, time_period, temp_dir, **kw
                 varstr = var2dirname[var]
                 
                 if var == 'IWV' or var == 'ICI':
-                    opt = '-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12'
+                    opt = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12'
                     day_file = f'{varstr}_15min_HadGEM3-GA71_N2560_{date_str}.nc'
                 elif var == 'OLR':
-                    opt = '--chname,{varname},{var} -selvar,{varname} seltimestep,3/24/3'
+                    opt = f'--chname,{varname},{var} -selvar,{varname} seltimestep,3/24/3'
                     day_file = f'{varstr}_1hr_HadGEM3-GA71_N2560_{date_str}.nc'
                 else:
-                    opt = '-chname,{varname},{var} - selvar,{varname}'
+                    opt = f'-chname,{varname},{var} -selvar,{varname}'
                     day_file = f'{varstr}_3hr_HadGEM3-GA71_N2560_{date_str}.nc'
                 
                 day_file = os.path.join(stem, varstr, day_file)
@@ -1295,6 +1335,8 @@ def get_preprocessingfilelist(model, run, variables, time_period, temp_dir, **kw
             'QV': 'mars_out_ml_moist',
             'SURF_PRES': 'gg_mars_out_sfc_ps_orog',
             'QI': 'mars_out_ml_moist',
+            'QC': 'mars_out_ml_moist',
+            'OMEGA': 'gg_mars_out_ml_upper_sh',
             'OLR': 'mars_out',
             'IWV': 'mars_out'
         }
@@ -1304,12 +1346,16 @@ def get_preprocessingfilelist(model, run, variables, time_period, temp_dir, **kw
             'SURF_PRES': 'lnsp',
             'IWV': 'tcwv',
             'QI': 'ciwc', 
+            'QC': 'param83.1.0',
+            'OMEGA': 'param120.128.192',
             'OLR': 'ttr'
         }
         var2numzlevels = {
             'TEMP': 113,
             'QV': 113,
             'QI': 113,
+            'QC': 113,
+            'OMEGA':113,
             'SURF_PRES': 1,
             'OLR': 1,
             'IWV': 1
@@ -1336,7 +1382,7 @@ def get_preprocessingfilelist(model, run, variables, time_period, temp_dir, **kw
                     filename = var2filename[var]
                     in_file = f'{filename}.{hour_con}'
                     in_file = os.path.join(stem, in_file)
-                    if var == 'TEMP' or var == 'SURF_PRES':
+                    if var == 'TEMP' or var == 'SURF_PRES' or var == 'OMEGA':
                         in_file = in_file+'.grib'
                     
                     date_str = time[i].strftime("%m%d")
@@ -1739,7 +1785,7 @@ def get_samplefilelist(num_samples_tot, model, run, variables, time_period, lonl
         file = os.path.join(data_dir, model, file)
         infile_list.append(file) 
     
-    for var in variables + ['IWV', 'lon', 'lat']:
+    for var in variables + ['IWV', 'lon', 'lat', 'timestep']:
         outfile = f'{model}-{run}_{var}_sample_{num_samples_tot}_{start_date}-{end_date}{latlonstr}{expstr}.nc'
         outfile = os.path.join(data_dir, model, 'random_samples', outfile)
         outfile_list.append(outfile)
