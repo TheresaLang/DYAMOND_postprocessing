@@ -18,7 +18,7 @@
 # Model, run, time period and variables have to be specified in config.json.
 # One job corresponds to the processing of one timestep in the merged 
 # DYAMOND output file.
-# Script has to be submitted with option --array=0-<Number_of_variables * Number_of_timesteps>
+# Script has to be submitted with option --array=0-<Number_of_models * Number_of_variables * Number_of_timesteps>
 import os
 import numpy as np
 from importlib import reload
@@ -26,12 +26,16 @@ from os.path import join
 import processing_tools as ptools
 import analysis_tools as atools
 from netCDF4 import Dataset
+reload(ptools)
 
 # load configuration
 config = ptools.config()
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to time step
-timestep = ID
-infiles, outfiles = ptools.get_interpolationtohalflevels_filelist(**config)
 
-ptools.interpolation_to_halflevels_per_timestep(infiles[timestep], outfiles[timestep], timestep, **config)
+models, runs, variables, infiles = ptools.get_interpolationtohalflevels_filelist(**config)
+
+timesteps = config['timesteps']
+timestep_ID = np.mod(ID, timesteps)
+
+ptools.interpolation_to_halflevels_per_timestep(infiles[ID], models[ID], runs[ID], variables[ID], timestep_ID, **config)
