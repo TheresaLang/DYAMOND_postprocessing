@@ -28,8 +28,8 @@ from netCDF4 import Dataset
 
 # load config
 config = ptools.config()
-model = config['model']
-run = config['run']
+model = 'IFS'
+run = '4.0km'
 
 # path to file containing surface pressure
 time = pd.date_range(config['time_period'][0], config['time_period'][1], freq='1D')
