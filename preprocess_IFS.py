@@ -26,7 +26,7 @@ import processing_tools as ptools
 config = ptools.config()
 
 # get list of input and output files and options for horizontal interpolation
-infiles, tempfiles, outfiles, options_selvar, options_nzlevs = ptools.get_preprocessingfilelist(**config)
+models, infiles, tempfiles, outfiles, options_selvar, options_nzlevs = ptools.get_preprocessingfilelist(**config)
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to infile
 
