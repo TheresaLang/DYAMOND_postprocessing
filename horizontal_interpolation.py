@@ -26,11 +26,9 @@ import processing_tools as ptools
 # load configuration
 config = ptools.config()
 
-# get paths to grids, weights and raw files
-grid = ptools.get_path2grid(config['grid_res'])
-weights = ptools.get_path2weights(**config)
-# get list of input and output files and options for horizontal interpolation
-infiles, tempfiles, options = ptools.get_interpolationfilelist(**config)
+# get list of input and output files as well as paths to grids and weights
+# and options for horizontal interpolation
+infiles, tempfiles, weights, grids, options = ptools.get_interpolationfilelist(**config)
 # ID of this job
 # Each job gets an own ID from 0 to N, where N is the number of jobs in the job array
 # N is specified when job is submitted with 
@@ -38,6 +36,6 @@ infiles, tempfiles, options = ptools.get_interpolationfilelist(**config)
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to infile
 
 # horizontal interpolation for the file with index ID in the list infiles
-ptools.interpolate_horizontally(infiles[ID], grid, weights, tempfiles[ID], options[ID], **config)
+ptools.interpolate_horizontally(infiles[ID], grids[ID], weights[ID], tempfiles[ID], options[ID], **config)
 
 
