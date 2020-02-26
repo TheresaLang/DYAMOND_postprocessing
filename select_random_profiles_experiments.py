@@ -31,9 +31,9 @@ ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to experimen
 experiments = np.arange(10)
 experiment = experiments[ID]
 config['experiment'] = experiment
-num_samples = config['num_samples'][0]
-infiles, outfiles = ptools.get_samplefilelist(num_samples, **config)
-heightfile = join(config['data_dir'], config['model'], 'target_height.nc')
+num_samples = config['num_samples']
+models, runs, infiles, outfiles = ptools.get_samplefilelist(num_samples, **config)
+heightfile = join(config['data_dir'], config['models'][0], 'target_height.nc')
 landmaskfile = join(config['data_dir'], 'ICON', 'land_mask.nc')
 
-ptools.select_random_profiles(num_samples, infiles, outfiles, heightfile, landmaskfile, **config)
+ptools.select_random_profiles(models[ID], runs[ID], num_samples, infiles, outfiles, heightfile, landmaskfile, **config)

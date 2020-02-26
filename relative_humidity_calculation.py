@@ -17,7 +17,7 @@
 # Model, run and time period have to be specified in config.json.
 # One job corresponds to the processing of one timestep in the input files (which contain
 # horizontally interpolated fields for one variable and several timesteps).
-# Script has to be submitted with option --array=0-<Number_of_timesteps>
+# Script has to be submitted with option --array=0-<Number_of_timesteps*Number_of_models>
 import numpy as np
 import os
 import typhon
@@ -29,9 +29,9 @@ from netCDF4 import Dataset
 config = ptools.config()
 
 # paths to files containing temperature, pressure and specific humidity
-temp_file, qv_file, pres_file = ptools.get_rhcalculation_filelist(**config)
+models, runs, temp_files, qv_files, pres_files = ptools.get_rhcalculation_filelist(**config)
+timesteps = config['timesteps']
+ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0))
+timestep_ID = np.mod(ID, timesteps) # ID corresponds to timestep
 
-timestep_ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to timestep
-
-# perform relative humidity calculation (and save to one file per timestep)
-ptools.calc_relative_humidity(temp_file, qv_file, pres_file, timestep_ID, **config)
+ptools.calc_relative_humidity(temp_files[ID], qv_files[ID], pres_files[ID], timestep_ID, models[ID], runs[ID], **config)

@@ -15,7 +15,7 @@
 # containing all timesteps.
 # Model, run and time period have to be specified in config.json.
 # One job corresponds to the processing of one variable.
-# Script has to be submitted with option --array=0-<Number_of_variables>
+# Script has to be submitted with option --array=0-<Number_of_models*Number_of_variables>
 import os
 import numpy as np
 from os.path import join

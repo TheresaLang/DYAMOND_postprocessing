@@ -27,10 +27,10 @@ atools = reload(atools)
 # load configuration
 config = ptools.config()
 
-ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to sample_fraction
-num_samples = config['num_samples'][ID]
-infiles, outfiles = ptools.get_samplefilelist(num_samples, **config)
-heightfile = join(config['data_dir'], config['model'], 'target_height.nc')
+ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
+num_samples = config['num_samples']
+models, runs, infiles, outfiles = ptools.get_samplefilelist(num_samples, **config)
+heightfile = join(config['data_dir'], models[ID], 'target_height.nc')
 landmaskfile = join(config['data_dir'], 'ICON', 'land_mask.nc')
 
-ptools.select_random_profiles(num_samples, infiles, outfiles, heightfile, landmaskfile, **config)
+ptools.select_random_profiles_new(models[ID], runs[ID], num_samples, infiles[ID], outfiles[ID], heightfile, landmaskfile, **config)

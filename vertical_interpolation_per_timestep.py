@@ -30,10 +30,11 @@ from netCDF4 import Dataset
 config = ptools.config()
 
 # paths to input files, output files and file containing model level heights 
-infiles, outfiles, heightfile = ptools.get_vinterpolation_per_timestep_filelist(**config)
-targetheightfile = ptools.get_path2targetheightfile(**config)
+models, runs, variables, infiles, heightfiles, targetheightfiles = ptools.get_vinterpolation_per_timestep_filelist(**config)
 
-timestep_ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to timestep
+timesteps = config['timesteps']
+ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0))
+timestep_ID = np.mod(ID, timesteps) # ID corresponds to timestep
 
 # perform vertical interpolation
-ptools.interpolate_vertically_per_timestep(infiles, outfiles[timestep_ID], heightfile, targetheightfile, timestep_ID, **config)
+ptools.interpolate_vertically_per_timestep(infiles[ID], heightfiles[ID], targetheightfiles[ID], timestep_ID, models[ID], runs[ID], variables[ID], **config)
