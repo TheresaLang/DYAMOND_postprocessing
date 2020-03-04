@@ -32,7 +32,7 @@ config = ptools.config()
 # paths to input files, output files and file containing model level heights 
 models, runs, variables, infiles, heightfiles, targetheightfiles = ptools.get_vinterpolation_per_timestep_filelist(**config)
 
-timesteps = config['timesteps']
+timesteps = config['num_timesteps']
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0))
 timestep_ID = np.mod(ID, timesteps) # ID corresponds to timestep
 
