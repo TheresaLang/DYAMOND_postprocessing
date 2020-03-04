@@ -33,4 +33,4 @@ models, runs, infiles, outfiles = ptools.get_samplefilelist(num_samples, **confi
 heightfile = join(config['data_dir'], models[ID], 'target_height.nc')
 landmaskfile = join(config['data_dir'], 'ICON', 'land_mask.nc')
 
-ptools.select_random_profiles_new(models[ID], runs[ID], num_samples, infiles[ID], outfiles[ID], heightfile, landmaskfile, **config)
+ptools.select_random_profiles(models[ID], runs[ID], num_samples, infiles[ID], outfiles[ID], heightfile, landmaskfile, **config)

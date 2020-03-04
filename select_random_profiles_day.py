@@ -42,4 +42,4 @@ timesteps = np.arange(8 * ID, 8 * (ID + 1))
 heightfile = join(config['data_dir'], model, 'target_height.nc')
 landmaskfile = join(config['data_dir'], 'ICON', 'land_mask.nc')
 
-ptools.select_random_profiles_new(model, run, num_samples, infile, outfile, heightfile, landmaskfile, timesteps=timesteps, **config)
+ptools.select_random_profiles(model, run, num_samples, infile, outfile, heightfile, landmaskfile, timesteps=timesteps, **config)
