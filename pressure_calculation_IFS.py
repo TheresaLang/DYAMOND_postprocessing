@@ -14,10 +14,10 @@
 
 # Script to calculate pressure at model levels from the surface pressure (Needed only 
 # for the IFS model).
-# Model, run and time period have to be specified before in config.json.
 # One job corresponds to the processing of one timestep contained in the input files 
 # (which contain horizontally interpolated fields for one variable and several timesteps)
 # Script has to be submitted with option --array=0-<Number_of_timesteps>
+
 import numpy as np
 import os
 import typhon
@@ -36,10 +36,10 @@ time = pd.date_range(config['time_period'][0], config['time_period'][1], freq='1
 start_date = time[0].strftime("%m%d")
 end_date = time[-1].strftime("%m%d")
 
-surf_pres_file = f'{model}-{run}_SURF_PRES_hinterp_merged_{start_date}-{end_date}.nc'
-surf_pres_file = os.path.join(config['data_dir'], model, surf_pres_file)
+surf_pres_file = os.path.join(config['data_dir'], model,\
+                              f'{model}-{run}_SURF_PRES_hinterp_merged_{start_date}-{end_date}.nc'
 
 timestep_ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to timestep
 
 # perform pressure calculation
-ptools.calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep_ID, **config)
+ptools.calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep_ID, model, run, **config)
