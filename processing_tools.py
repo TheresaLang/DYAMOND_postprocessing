@@ -14,9 +14,9 @@ from netCDF4 import Dataset
 import matplotlib.pyplot as plt
 from moisture_space import utils
 
-#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+
 
 def config():
     """ Reads specifications for processing from confing.json and returns a dictionary
@@ -28,7 +28,16 @@ def config():
     return config
 
 def preprocess(model, infile, tempfile, outfile, option_1, option_2, numthreads, **kwargs):
-    """
+    """ Performs preprocessing steps (before horizontal interpolation). This function just 
+    calls the model-specific function for preprocessing.
+    
+    Parameters:
+        model (str): Name of model
+        infile (str): Path to input file
+        tempfile (str): Path to temporary output file
+        outfile (str): Path to output file
+        option_1 (str), option_2 (str): options for preprocessing
+        numthreads (int): Number of OpenMP threads for cdo
     """
     
     if model == 'IFS':
@@ -48,7 +57,7 @@ def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numt
         option_nzlevs (str): Number of vertical levels
         numthreads (int): Number of OpenMP threads for cdo
     """
-    print('pps IFS')
+    logger.info('Preprocessing IFS...')
     filename, file_extension = os.path.splitext(tempfile)
     tempfile_1 = tempfile
     tempfile_2 = filename+'_2'+file_extension
@@ -106,7 +115,7 @@ def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwar
         outfile (str): Name for preprocessed output file
         numthreads (int): Number of OpenMP threads for cdo
     """
-    print('pps MPAS')
+    logger.info('Preprocessing MPAS...')
     gridfile = '/work/ka1081/DYAMOND/PostProc/GridsAndWeights/MPAS-3.75km_gridinfo.nc'
     cmd_1 = f'cdo -P 4 setattribute,*@axis="txz" -selname,{option_selvar} {infile} {tempfile}'
     cmd_2 = f'cdo -P 4 setgrid,mpas:{gridfile} {tempfile} {outfile}'
@@ -119,16 +128,17 @@ def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwar
     logger.info(cmd_3)
     os.system(cmd_3)
     
-
 def preprocess_ARPEGE_1(infile, outfile, **kwargs):
     """
     """
     cmd_1 = f'/work/ka1081/DYAMOND/PostProc/Utilities/gribmf2ecmwf {infile} {outfile}'
 
     
-def interpolate_horizontally(infile, target_grid, weights, outfile, options, numthreads, lonlatbox, **kwargs):
+def interpolate_horizontally(infile, target_grid, weights, outfile, options, numthreads,
+                             lonlatbox=[-180, 180, -30, 30], **kwargs):
     """ Horizontal Interpolation to another target grid with the CDO command remap 
-    that uses pre-calculated interpolation weights.
+    that uses pre-calculated interpolation weights. The selection of a lon-lat box is 
+    performed at the same time.
     
     Parameters:
         infile (str): path to file with input 2D or 3D field
@@ -136,6 +146,8 @@ def interpolate_horizontally(infile, target_grid, weights, outfile, options, num
         weights (str): path to file with pre-calculated interpolation weights
         outfile (str): output file (full path)
         numthreads (int): number of OpenMP threads for cdo 
+        lonlatbox (list of num): boundaries of lon-lat box to select 
+            [lonmin, lonmax, latmin, latmax]
     """
     lon1 = lonlatbox[0]
     lon2 = lonlatbox[1]
@@ -149,10 +161,10 @@ def interpolate_horizontally(infile, target_grid, weights, outfile, options, num
         to_netCDF = '-f nc4'
     
     if options != '':
-        options = options + ' '
+        options += ' '
         
     cmd = f'cdo --verbose -O {to_netCDF} -P {numthreads} sellonlatbox,{lon1},{lon2},{lat1},{lat2} -remap,{target_grid},{weights} {options}{infile} {outfile}'
-    print(cmd)
+    logger.info(cmd)
     os.system(cmd)
     
 def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, time_period, temp_dir, **kwargs):
@@ -171,45 +183,37 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
             in the format YYYY-mm-dd 
         temp_dir (str): Directory for output files
     """
-    print(model)
-    print(timestep)
-    print(temp_file)
+
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
+    # variable names
     temp_name = 'TEMP'
     qv_name = 'QV'
-    
-#    if model == 'IFS':
-#        pres_name = 'SURF_PRES'
     if model == 'SAM':
         pres_name = 'PP'
     else:
         pres_name = 'PRES'
-            
+    
+    # Read variables from files
+    logger.info('Read variables from files')
+    # temperature
     with Dataset(temp_file) as ds:
         temp = ds.variables[temp_name][timestep].filled(np.nan)
         lat = ds.variables['lat'][:].filled(np.nan)
         lon = ds.variables['lon'][:].filled(np.nan)
-        
+    
+    # pressure (for SAM mean pressure and perturbation)
     with Dataset(pres_file) as ds:
-#        if model == 'IFS':
-#            surf_pres = np.exp(ds.variables[pres_name][timestep].filled(np.nan))
         if model == 'SAM':
             pres_pert = ds.variables[pres_name][timestep].filled(np.nan)
             pres_mean = ds.variables['p'][:].filled(np.nan)
         else:
             pres = ds.variables[pres_name][timestep].filled(np.nan)
             
+    # Specific humidity        
     with Dataset(qv_file) as ds:
         qv = ds.variables[qv_name][timestep].filled(np.nan)
     
-    # for SAM, pressure has to be calculated from mean pressure and pressure perturbation first
-#    if model == 'IFS':
-#        pres = np.ones(temp.shape) * np.nan
-#        a, b = get_IFS_pressure_scaling_parameters()
-#        for la in range(temp.shape[1]):
-#            for lo in range(temp.shape[2]):            
-#                pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
-    
+    # for SAM, pressure has to be calculated from mean pressure and pressure perturbation
     if model == 'SAM':
         qv = qv * 1e-3
         pres = np.zeros(pres_pert.shape)
@@ -227,14 +231,14 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
     rh = np.expand_dims(rh, axis=0)
     if model == 'MPAS':
         rh = rh.transpose(0, 3, 1, 2)
+    
     # Save RH to file 
+    logger.info('Save RH to file')
     height = np.arange(rh.shape[1])
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_RH_{date_str}_{hour_str}_hinterp.nc'
     outname = os.path.join(temp_dir, outname)
-    logger.info('Save file')
-    print(outname)
     latlonheightfield_to_netCDF(height, lat, lon, rh, 'RH', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
 
 def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile, timestep, model, run, time_period, temp_dir, **kwargs):
@@ -255,42 +259,39 @@ def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile
         temp_dir (str): Directory for output files
     """
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
-    # read variables      
+    # read variables   
+    logger.info('Read variables from files')
+    # temperature
     with Dataset(temp_file) as ds:
         temp = ds.variables['TEMP'][timestep].filled(np.nan)
         lat = ds.variables['lat'][:].filled(np.nan)
         lon = ds.variables['lon'][:].filled(np.nan)
-
+    # omega
     with Dataset(omega_file) as ds:
         omega = ds.variables['OMEGA'][timestep].filled(np.nan)
-        
+    # pressure    
     with Dataset(pres_file) as ds:
         pres = ds.variables['PRES'][timestep].filled(np.nan)
-            
+    # specific humidity        
     with Dataset(qv_file) as ds:
         qv = ds.variables['QV'][timestep].filled(np.nan)
-        
-    with Dataset(heightfile) as ds:
-        height = ds.variables['H'][timestep].filled(np.nan)
-    
-    delta_pres = np.zeros((pres.shape))
-    for i in range(pres.shape[1]):
-        for j in range(pres.shape[2]):
-            delta_pres[:, i, j] = np.gradient(pres[:, i, j], height[:, i, j], axis=0)
     
     # calculate vertical velocity
-#    g = typhon.constants.g
-#    r = typhon.physics.specific_humidity2mixing_ratio(qv) # mixing ratio
-#    virt_temp = temp * (1 + 0.61 * r) # virtual temperature
-#    rho = typhon.physics.density(pres, virt_temp)
-#    w = -omega / rho / g
-    
-    w = omega / delta_pres
-    w = np.expand_dims(w, axis=0)
-    
-    return pres, delta_pres, w
+    logger.info('Calculate vertical velocity')
+    g = typhon.constants.g
+    # mixing ratio
+    r = typhon.physics.specific_humidity2mixing_ratio(qv) 
+    # virtual temperature
+    virt_temp = temp * (1 + 0.61 * r) 
+    # air density (from virtual temperature)
+    rho = typhon.physics.density(pres, virt_temp)
+    # vertical velocity
+    w = -omega / rho / g
+    return omega, w, rho, virt_temp, temp
     
     # save to file
+    logger.info('Save omega to file')
+    w = np.expand_dims(w, axis=0)
     height = np.arange(w.shape[1])
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
@@ -299,37 +300,6 @@ def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile
     logger.info('Save file')
     print(outname)
     latlonheightfield_to_netCDF(height, lat, lon, w, 'W', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
-    
-#def calc_OLR_NICAM(sw_down_file, sw_up_file, timestep, model, run, time_period, temp_dir, **kwargs):
-#    """ Calculate OLR from difference between shortwave downward flux and shortwave upward flux at TOA.
-#    
-#    Parameters:
-#        sw_down_file (str): Path to file containing shortwave downward flux at TOA
-#        sw_up_file (str): Path to file containing shortwave upward flux at TOA
-#        timestep (int): Timestep to select
-#        
-#    """
-#    varnames = get_modelspecific_varnames(model)
-#    time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
-#    swd_name = varnames['FTOASWD']
-#    swu_name = varnames['FTOASWU']
-#    
-#    with Dataset(sw_down_file) as ds:
-#        swd = ds.variables[swd_name][timestep].filled(np.nan)
-#        lat = ds.variables['lat'][:].filled(np.nan)
-#        lon = ds.variables['lon'][:].filled(np.nan)
-#    
-#    with Dataset(sw_up_file) as ds:
-#        swu = ds.variables[swu_name][timestep].filled(np.nan)
-#    
-#    logger.info('Calculate OLR')
-#    lwu = swd - swu
-#    date_str = time[timestep].strftime('%m%d')
-#    hour_str = time[timestep].strftime('%H')
-#    outname = f'{model}-{run}_OLR_{date_str}_{hour_str}_hinterp.nc'
-#    outname = os.path.join(temp_dir, outname)
-#    logger.info('Save file')
-#    latlonfield_to_netCDF(lat, lon, lwu, 'OLR', 'W m**-2', outname, time_dim=True, time_var=timestep*3, overwrite=True)
         
 def interpolate_vertically(infile, outfile, height_file, target_height_file, variable, **kwargs):
     """ Interpolates field from from height levels given in height_file to new height levels 
@@ -377,33 +347,37 @@ def interpolate_vertically(infile, outfile, height_file, target_height_file, var
     
 def interpolate_vertically_per_timestep(infile, height_file, target_height_file, timestep, model, run, variable, time_period, temp_dir, **kwargs):
     """ Perform vertical interpolation for one timestep included in the input files. Every input file contains one variable.
-    Outupt files contain only one timestep.
+    Note: Only one timestep is selected from input files, output files contain one time step per file and have to be
+    merged afterwards.
     
     Parameters:
         infiles (list of str): List of input files, one for every variable (in the same order as in the variable variables)
-        outfiles (list of outfiles): List of output files, one for every variable (output files contain only one timestep)
-        height_file (str): File containing geometric heights for every model level for this timestep
+        height_file (str): Path to file containing geometric heights for every model level for this timestep
+        target_height_file (str): Path to file containing target heights
         timestep (int): Timestep to process
         model (str): Name of model
-        variables (list of str): List of variables to interpolate       
+        run (str): Name of run
+        variable (str): Variable to interpolate  
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
     """
-    #varnames = get_modelspecific_varnames(model)
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_{variable}_hinterp_vinterp_{date_str}_{hour_str}.nc'
-    outname = os.path.join(temp_dir, outname)
-    
+    outname = os.path.join(temp_dir, outname)    
     units = get_variable_units()
     
+    # Read variables from files
+    logger.info('Read variables from files')
+    # target height
     with Dataset(target_height_file) as dst:
         target_height = dst.variables['target_height'][:].filled(np.nan)
-        
+    # height     
     with Dataset(height_file) as dsh:
         heightname = 'H'
         var_height = dsh.variables[heightname][timestep].filled(np.nan)
-        
-        
+    # lon, lat and variable to interpolate            
     with Dataset(infile) as ds:
         lat = ds.variables['lat'][:].filled(np.nan)
         lon = ds.variables['lon'][:].filled(np.nan)
@@ -414,6 +388,7 @@ def interpolate_vertically_per_timestep(infile, height_file, target_height_file,
     field_interp = np.ones((ntargetheight, nlat, nlon)) * np.nan
 
     # interpolate
+    logger.info('Interpolation')
     for i in range(nlat):
         print(f'Lat: {i} of {nlat}')
         for j in range(nlon):
@@ -422,15 +397,18 @@ def interpolate_vertically_per_timestep(infile, height_file, target_height_file,
                 field[:, i, j],
                 bounds_error=False,
                 fill_value=np.nan)(target_height)
-
-    field_interp = np.expand_dims(field_interp, axis=0)
+    
     # save interpolated field to netCDF file
+    logger.info('Save to file')
+    field_interp = np.expand_dims(field_interp, axis=0)
     latlonheightfield_to_netCDF(target_height, lat, lon, field_interp,\
                                 variable, units[variable], outname, time_dim=True, time_var=timestep*3, overwrite=True)  
         
 def interpolation_to_halflevels_per_timestep(infile, model, run, variable, timestep, time_period, data_dir, temp_dir, **kwargs):
     """ Perform vertical interpolation for a field given on full model levels to half levels for one timestep included
     in the input file. 
+    Note: Only one timestep is selected from input files, output files contain one time step per file and have to be
+    merged afterwards.
     
     Parameters:
         infile (str): Path to input file
@@ -449,27 +427,32 @@ def interpolation_to_halflevels_per_timestep(infile, model, run, variable, times
     outname = os.path.join(temp_dir, outname)
     units = get_variable_units()
     
+    # Read variables from file
+    logger.info('Read from file')
     varname = variable    
     with Dataset(infile) as ds:
         field = np.squeeze(ds.variables[varname][timestep].filled(np.nan))
         lat = ds.variables['lat'][:].filled(np.nan)
         lon = ds.variables['lon'][:].filled(np.nan)
-        
+    # Dimensions are different for MPAS
     if model == 'MPAS':
         field = field.transpose(2, 0, 1)
-    print(field.shape)
-    print('interpolate')
+
+    # Interpolation
+    logger.info('Interpolation')
     field_interp = field[:-1] + 0.5 * np.diff(field, axis=0)    
     field_interp = np.expand_dims(field_interp, 0)
     height = np.arange(field_interp.shape[1])
-    print('save file')
-    print(field_interp.shape)
     
+    # Save to file
+    logger.info('Save to file')
     latlonheightfield_to_netCDF(height, lat, lon, field_interp, variable, units[variable], outname, time_dim=True, time_var=timestep*3, overwrite=True)
             
-def calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep, temp_dir, models, runs, time_period, **kwargs):
+def calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep, model, run, temp_dir, time_period, **kwargs):
     """ Calculate pressure at IFS model levels from surface pressure for one timestep contained in 
     surf_pres_file.
+    Note: Only one timestep is selected from input files, output files contain one time step per file and have to be
+    merged afterwards.
     
     Parameters:
         surf_pres_file (str): Path to file that contains (logarithm of) surface pressure for every timestep
@@ -480,33 +463,38 @@ def calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep, temp
         time_period (list of str): list containing start and end of time period as string 
             in the format YYYY-mm-dd 
     """
-    model = models[0]
-    run = runs[0]
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
-    with Dataset(surf_pres_file) as ds:
-        surf_pres = np.exp(ds.variables['SURF_PRES'][timestep].filled(np.nan))
-        lat = ds.variables['lat'][:].filled(np.nan)
-        lon = ds.variables['lon'][:].filled(np.nan)
-    
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_PRES_{date_str}_{hour_str}_hinterp.nc'
     outname = os.path.join(temp_dir, outname)
+    
+    # Read surface pressure from file
+    logger.info('Read surface pressure from file')
+    with Dataset(surf_pres_file) as ds:
+        # calc surface pressure from logarithm of surface pressure
+        surf_pres = np.exp(ds.variables['SURF_PRES'][timestep].filled(np.nan))
+        lat = ds.variables['lat'][:].filled(np.nan)
+        lon = ds.variables['lon'][:].filled(np.nan)
+    
+    # Calculate pressure
+    logger.info('Calculate pressure')
+    # Scaling parameters
     a, b = get_IFS_pressure_scaling_parameters()
     pres = np.ones((len(a), surf_pres.shape[1], surf_pres.shape[2])) * np.nan    
     for la in range(surf_pres.shape[1]):
-        logger.info(la)
         for lo in range(surf_pres.shape[2]):            
             pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
-    logger.info('Save pressure file')
+            
+    # Save to file
+    logger.info('Save pressure to file')
     height = np.arange(pres.shape[0])
     pres = np.expand_dims(pres, axis=0)
-    logger.info(pres.shape)
     latlonheightfield_to_netCDF(height, lat, lon, pres, 'PRES', 'Pa', outname, time_dim=True, time_var=timestep*3, overwrite=True)
     
 def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, run, time_period, temp_dir, **kwargs):
     """ Calculate level heights from level pressure and layer temperature assuming hydrostatic equilibrium (Needed
-    for IFS model).
+    for IFS, SAM and FV3).
     
     Parameters:
         pres_file (str): Path to file containing pressures for every model level
@@ -514,6 +502,9 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
         z0_file (str): Path to file containing orography (as geopotential height)
         timestep (int): Timestep in pres_file and temp_file to process
         model (str): Name of model
+        run (str): Name of model run
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
         temp_dir (str): Path to directory for output files
     """
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
@@ -521,23 +512,28 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_H_{date_str}_{hour_str}_hinterp.nc'
     outname = os.path.join(temp_dir, outname)
-    print(outname)
     
+    # variable names
     temp_name = 'TEMP'
     pres_name = 'PRES'
     
-    logger.info('Load data')
+    # Read variables from file
+    logger.info('Read from file')
+    # temperature, lat, lon
     with Dataset(temp_file) as ds:
         temp = ds.variables[temp_name][timestep].filled(np.nan)
         lat = ds.variables['lat'][:].filled(np.nan)
         lon = ds.variables['lon'][:].filled(np.nan)
         
     with Dataset(pres_file) as ds:
+        # IFS: logarithm of surface pressure is gien
         if model == 'IFS':
             surf_pres = np.exp(ds.variables[pres_name][timestep].filled(np.nan))
+        # SAM: mean pressure and pressure perturbation are given
         if model == 'SAM':
             pres_pert = ds.variables[pres_name][timestep].filled(np.nan)
             pres_mean = ds.variables['p'][:].filled(np.nan)
+        # FV3: only one pressure vector is given (same for every grid cell)
         if model == 'FV3':
             pres_vector = ds.variables['pfull'][:].filled(np.nan)
             pres = np.zeros((len(pres_vector), len(lat), len(lon)))
@@ -546,24 +542,28 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
                     pres[:, la, lo] = pres_vector
         else:
             pres = ds.variables[pres_name][timestep].filled(np.nan)
-    
+            
+    # orography
     with Dataset(z0_file) as ds:
         if model == 'IFS':
             z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
         elif model == 'FV3':
             z0 = ds.variables['z'][:].filled(np.nan)
     
+    # Calculate heights
     logger.info('Calculate heights')
     height = np.flipud(pressure2height(np.flipud(pres), np.flipud(temp), z0))
-    print(height[:, 0, 0])
+    
+    # Save to file
+    logger.info('Save heights to file')
     h = np.arange(height.shape[0])
-    height = np.expand_dims(height, axis=0)
-    logger.info('Save file')
+    height = np.expand_dims(height, axis=0)    
     latlonheightfield_to_netCDF(h, lat, lon, height, 'H', 'm', outname, time_dim=True, time_var=timestep*3, overwrite=True)
 
 
 def calc_net_radiation_flux(infiles, tempfile, outfile, flux_names):
-    """ Calculates net radiation flux from upward and downward fluxes.
+    """ Calculates net radiation flux from upward and downward fluxes using CDOs only. Files containing
+    upward and downward fluxes are merged first, then the net flux is calculated.
     
     Parameters:
         infiles (list of str): Name of input files containing 1. downward and 2. upward fluxes
@@ -713,16 +713,13 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             (all timesteps are used; default)
     """
     
-    print(model)
-    print('config')
+    logger.info('Config')
     variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'lat', 'lon', 'timestep']
     test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
-    print(test_ind)
     test_var = variables[test_ind]
-    print(test_var)
     test_filename = infiles[test_ind]
     
-    print('get dimensions')
+    logger.info('Get dimensions')
     # height
     height = atools.read_var(heightfile, model, 'target_height')
     num_levels = height.shape[0]
@@ -733,6 +730,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     if model == 'GEOS':
         surface = -2
     
+    logger.info('Read lats/lons from file')
     # lon, lat
     with Dataset(test_filename) as ds:
         dimensions = ds.variables[test_var].shape
@@ -745,29 +743,28 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     lat = lat[lat_reg_ind]
     lon = lon[lon_reg_ind]
     
+    logger.info('NaN mask')
     if model == 'MPAS' and test_var in ['TEMP', 'PRES', 'QV', 'QI', 'QC']:
         nan_mask = np.logical_not(np.isnan(test_field[lat_reg_ind][:, lon_reg_ind][:, :, surface]))
     else:
-        print(np.isnan(test_field[surface][lat_reg_ind][:, lon_reg_ind]).shape)
         nan_mask = np.logical_not(np.isnan(test_field[surface][lat_reg_ind][:, lon_reg_ind]))
-        print(nan_mask[0].shape)
     
     # timesteps
-    print('timesteps')
+    logger.info('Timesteps')
     if timesteps is not None:
         num_timesteps = len(timesteps)
     else:
         num_timesteps = dimensions[0]
         timesteps = np.arange(num_timesteps)
+        
     if model in ['MPAS', 'IFS']:
         timesteps = timesteps[:-1]
         num_timesteps = num_timesteps - 1
-        
-    print(timesteps)
-    print(num_timesteps)
+    
+    print(f'Num_timesteps: {num_timesteps}')
     num_samples_timestep = int(num_samples_tot / num_timesteps)
     
-    print('ocean mask')
+    logger.info('Ocean mask')
     # get ocean_mask
     ocean_mask = np.logical_not(
         np.squeeze(atools.read_var(landmaskfile, model, 'land_mask'))
@@ -780,7 +777,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
 #    lat_ocean = np.where(ocean_mask)[0]
 #    lon_ocean = np.where(ocean_mask)[1]
     
-    print('total mask')    
+    logger.info('Total mask')    
     total_mask = np.where(np.logical_and(ocean_mask, nan_mask))
     lat_not_masked = total_mask[0]
     lon_not_masked = total_mask[1]
@@ -788,7 +785,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     lat_inds = np.zeros((num_timesteps, num_samples_timestep)).astype(int)
     lon_inds = np.zeros((num_timesteps, num_samples_timestep)).astype(int)
 
-    print('get indices')
+    logger.info('Get indices')
     for t in range(num_timesteps):
         for i in range(num_samples_timestep):
             lat_inds[t, i] = np.random.choice(lat_not_masked, 1)[0].astype(int)
@@ -807,8 +804,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         profiles['lat'][start:end] = lat[lat_inds[j]]
         profiles['lon'][start:end] = lon[lon_inds[j]]
     
-    
-    print('read data')
+    print('Read variables from files')
 
     for i, var in enumerate(variables):
         print(var)
@@ -816,21 +812,16 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             profiles[var] = np.ones((num_samples_tot)) * np.nan
             profiles_sorted[var] = np.ones((num_samples_tot)) * np.nan
             for j, t in enumerate(timesteps):
-                print(t)
-                print(j)
                 start = j * num_samples_timestep
                 end = start + num_samples_timestep
                 with Dataset(infiles[i]) as ds:
                     profiles[var][start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j]]
         else:
             profiles[var] = np.ones((num_levels, num_samples_tot)) * np.nan
-            print(profiles[var].shape)
             profiles_sorted[var] = np.ones((num_levels, num_samples_tot)) * np.nan
             for j, t in enumerate(timesteps):
                 start = j * num_samples_timestep
-                print(f'start: {start}')
                 end = start + num_samples_timestep
-                print(f'end: {end}')
                 with Dataset(infiles[i]) as ds:
                     if model == 'MPAS' and var in ['TEMP', 'PRES', 'QV', 'QI', 'QC']:
                         profiles[var][:, start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j], :].transpose([1, 0])
@@ -843,13 +834,17 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         if model == 'SAM' and var in ['QV', 'QI', 'QC']:
             profiles[var] *= 1e-3
             
-    print('Calculate IWV and sort')
+    logger.info('Calculate IWV and sort')
     # calculate IWV
+    print(height)
+    print(profiles['PRES'].shape)
+    print(profiles['TEMP'].shape)
+    print(profiles['QV'].shape)
     profiles['IWV'] = utils.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)
     # get indices to sort by IWV
     IWV_sort_idx = np.argsort(profiles['IWV'])
             
-    # sort by IWV
+    # sort by IWV and save output
     for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
         if var in variables_2D:
             profiles_sorted[var] = profiles[var][IWV_sort_idx]
@@ -931,7 +926,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
         height
     )
     
-    profiles_sorted['H_RH_peak'], _ = utils.tropopause_height(
+    profiles_sorted['H_RH_peak'], _ = utils.rh_peak_height(
         profiles_sorted['RH'], 
         height
     )
