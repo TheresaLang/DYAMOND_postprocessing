@@ -8,6 +8,7 @@ import typhon
 import random
 import pickle
 import analysis_tools as atools
+from time import sleep
 from cdo import Cdo
 from scipy.interpolate import interp1d
 from netCDF4 import Dataset
@@ -22,7 +23,7 @@ def config():
     """ Reads specifications for processing from confing.json and returns a dictionary
     with specifications.
     """
-    with open('config.json') as handle:
+    with open('/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/config.json') as handle:
         config = json.loads(handle.read())
     
     return config
@@ -128,11 +129,59 @@ def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwar
     logger.info(cmd_3)
     os.system(cmd_3)
     
-def preprocess_ARPEGE_1(infile, outfile, **kwargs):
+def preprocess_ARPEGE_1(preprocess_dir, infile_2D, infile_3D, outfileprefix, merge_list_3D, tempfile_list_3D,\
+                        filelist_2D, tempfile_list_2D, variables, **kwargs):
+    """ Preprocessing of ARPEGE raw data (steps needed before horizontal interpolation).
+    
+    Parameters: 
+        preprocess_dir (str): full path to directory where preprocessing is performed 
+            (gribsplit can only write output into the directory where it runs)
+        infile_2D (str): full path to file containing ARPEGE 2D raw data for one time step
+        infile_3D (str): full path to file containing ARPEGE 3D raw data for one time step
+        outfileprefix (str): prefix for temporary files (should contain date and time)
+        merge_list_3D (list of list of str): lists of filenames of 3D variables produced by gribsplit,
+            that have to be merged (containing data for individual model levels), 
+            one list for each variable
+        tempfile_list_3D (list of str): names for files containing merged 3D variables 
+            (one name for every variable)
+        filelist_2D (list of str): list of filenames of 2D variables produced by gribsplit
+        tempfile_list_2D (list of str): list of filenames of 2D variables (files produced by
+            gribsplit are renamed)
     """
-    """
-    cmd_1 = f'/work/ka1081/DYAMOND/PostProc/Utilities/gribmf2ecmwf {infile} {outfile}'
-
+    variables_3D = ['TEMP', 'QV', 'QI', 'QC', 'W']
+    variables_2D = ['SURF_PRES', 'OLR', 'STOA']
+    
+    # split file containing 3D variables
+    cmd_1 = f'{preprocess_dir}/mygribsplit {infile_3D} {outfileprefix}'
+    logger.info(cmd_1)
+    os.system(cmd_1)
+    
+    # split file containing 2D variables
+    cmd_2 = f'{preprocess_dir}/mygribsplit {infile_2D} {outfileprefix}'
+    logger.info(cmd_2)
+    os.system(cmd_2)
+     
+    i = 0 # index for 3D variables
+    j = 0 # index for 2D variables
+    for var in variables:
+        # merge individual model levels for each 3D variable
+        if var in variables_3D:
+            mergelist_str = ' '.join(merge_list_3D[i])
+            cmd_3 = f'cdo merge {mergelist_str} {tempfile_list_3D[i]}'
+            i += 1
+        
+        # rename files containing 2D variables
+        elif var in variables_2D:
+            cmd_3 = f'mv {filelist_2D[j]} {tempfile_list_2D[j]}'
+            j += 1
+            
+        logger.info(cmd_3)
+        os.system(cmd_3)
+    
+    # remove files that are not needed
+    cmd_4 = f'rm {outfileprefix}.t*.l*.grb.*'
+    logger.info(cmd_4)
+    os.system(cmd_4)
     
 def interpolate_horizontally(infile, target_grid, weights, outfile, options, numthreads,
                              lonlatbox=[-180, 180, -30, 30], **kwargs):
@@ -245,6 +294,8 @@ def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile
     """ Calculate vertical velocity w from pressure velocity omega (requires temperature, specific humidity and pressure).
     Note: Only one timestep is selected from input files, output files contain one time step per file and have to be
     merged afterwards. 
+    
+    NOT NEEDED ANY MORE!
     
     Parameters:
         omega_file (str): File containing pressure velocity omega (all timesteps)
@@ -448,7 +499,7 @@ def interpolation_to_halflevels_per_timestep(infile, model, run, variable, times
     logger.info('Save to file')
     latlonheightfield_to_netCDF(height, lat, lon, field_interp, variable, units[variable], outname, time_dim=True, time_var=timestep*3, overwrite=True)
             
-def calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep, model, run, temp_dir, time_period, **kwargs):
+def calc_level_pressure_from_surface_pressure(surf_pres_file, timestep, model, run, temp_dir, time_period, **kwargs):
     """ Calculate pressure at IFS model levels from surface pressure for one timestep contained in 
     surf_pres_file.
     Note: Only one timestep is selected from input files, output files contain one time step per file and have to be
@@ -480,11 +531,12 @@ def calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep, mode
     # Calculate pressure
     logger.info('Calculate pressure')
     # Scaling parameters
-    a, b = get_IFS_pressure_scaling_parameters()
+    a, b = get_pressure_scaling_parameters(model)
     pres = np.ones((len(a), surf_pres.shape[1], surf_pres.shape[2])) * np.nan    
     for la in range(surf_pres.shape[1]):
         for lo in range(surf_pres.shape[2]):            
             pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
+            #return(a[ilev-1]+b[ilev-1]*surfacepressure)
             
     # Save to file
     logger.info('Save pressure to file')
@@ -494,7 +546,7 @@ def calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep, mode
     
 def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, run, time_period, temp_dir, **kwargs):
     """ Calculate level heights from level pressure and layer temperature assuming hydrostatic equilibrium (Needed
-    for IFS, SAM and FV3).
+    for IFS, SAM, FV3 and ARPEGE).
     
     Parameters:
         pres_file (str): Path to file containing pressures for every model level
@@ -1204,7 +1256,7 @@ def get_modelspecific_varnames(model):
             'QV': 'QV',
             'QI': 'QI',
             'QC': 'param83.1.0',
-            'OMEGA': 'param120.128.192',
+            'W': 'param120.128.192',
             'PRES': 'PRES',
             'RH': 'RH',
             'OLR': 'OLR',
@@ -1213,7 +1265,7 @@ def get_modelspecific_varnames(model):
             'OLRC': 'OLRC',
             'STOA': 'STOA',
             'STOAC': 'STOAC',
-            'W': '-'
+            'OMEGA': '-'
         }
     elif model == 'SAM':
         varname = {
@@ -1278,6 +1330,21 @@ def get_modelspecific_varnames(model):
             'QC': 'qc',
             'STOA': 'acswnett',
             'OMEGA': '-'
+        }
+        
+    elif model == 'ARPEGE':
+        varname = {
+            'TEMP': 'T',
+            'QV': 'QV',
+            'QI': 'param84.1.0',
+            'SURF_PRES': 'PS',
+            'RH': 'RH',
+            'IWV': 'TQV',
+            'OLR': 'ACCTHB_T',
+            'W': 'W',
+            'QC': 'param83.1.0',
+            'STOA': 'ACCSOB_T',
+            'OMEGA': 'W'
         }
 
     else:
@@ -1398,7 +1465,11 @@ def get_path2weights(model, run, grid_res, **kwargs):
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "3.75km" and "7.5km".')
             
-
+    elif model == 'ARPEGE':
+        if run == '2.5km':
+            weights = 'ARPEGE-2.5km_0.10_grid_wghts.nc'
+        else:
+            logger.error(f'Run {run} not supported for {model}.\nSupported run is: "2.5km".')
     # other models...
     else:
         logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
@@ -1643,11 +1714,11 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OLR': 179,
                 'IWV': 137,
                 'QC': 246,
-                'OMEGA': 120,
+                'W': 120,
                 'STOA': 178,
                 'OLRC': 209, 
                 'STOAC': 208,
-                'W': '-'
+                'OMEGA': '-'
             }
     #        var2unit = {
     #           'TEMP': 'K',
@@ -1739,7 +1810,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'SUTOA': 'rsut',
                 'STOA': '-',
                 'OLRC': '-',
-                'STOAC': '-'
+                'STOAC': '-',
+                'OMEGA': '-'
             }
 
             for var in variables:
@@ -1789,7 +1861,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'SUTOA': 'fsut',
                 'STOA': '-',
                 'OLRC': '-',
-                'STOAC': '-'
+                'STOAC': '-',
+                'OMEGA': '-'
             }
 
             target_time_3h = pd.date_range(time_period[0]+' 3:00:00', pd.Timestamp(time_period[1]+' 0:00:00')+pd.DateOffset(1), freq='3h')
@@ -1875,6 +1948,31 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
 
+        elif model == 'ARPEGE':
+            preprocessing_path = '/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/preprocessing_ARPEGE'
+            griddesfile = os.path.join(preprocessing_path, 'griddes.arpege1')
+            for var in variables:
+                varname = varnames[var]
+                for i in np.arange(time.size):
+                    if time[i].day == 10:
+                        hours = np.arange(3, 22, 3)
+                    else:
+                        hours = np.arange(3, 25, 3)
+                    for h in hours:
+                        year_str = time[i].strftime("%Y")
+                        date_str = time[i].strftime("%m%d")
+                        hour_str = f'{h:02d}'
+                        hour_file = f'{year_str}{date_str}{hour_str}_{var}.gp'
+                        hour_file = os.path.join(temp_dir, hour_file)
+                        out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                        out_file = os.path.join(temp_dir, out_file)
+                        option = f'-setgrid,{griddesfile} -setgridtype,regular -chname,{varname},{var}'
+                        raw_files.append(hour_file)
+                        out_files.append(out_file)
+                        options.append(option)
+                        weights.append(get_path2weights(model, run, grid_res))
+                        grids.append(get_path2grid(grid_res))
+                               
         else:
             logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
             return None
@@ -1920,14 +2018,14 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'SURF_PRES': 'gg_mars_out_sfc_ps_orog',
                 'QI': 'mars_out_ml_moist',
                 'QC': 'mars_out_ml_moist',
-                'OMEGA': 'gg_mars_out_ml_upper_sh',
+                'W': 'gg_mars_out_ml_upper_sh',
                 'OLR': 'mars_out',
                 'IWV': 'mars_out',
                 'OLRC': 'mars_out',
                 'STOA': 'mars_out',
                 'STOAC': 'mars_out',
-                'PRES': '-', 
-                'W': '-'
+                'PRES': '-',
+                'OMEGA': '-'
             }
             var2variablename = {
                 'TEMP': 'T',
@@ -1936,20 +2034,20 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'IWV': 'tcwv',#
                 'QI': 'param84.1.0', 
                 'QC': 'param83.1.0',
-                'OMEGA': 'param120.128.192',
+                'W': 'param120.128.192',
                 'OLR': 'ttr',
                 'OLRC': 'ttrc',
                 'STOA': 'tsr',
                 'STOAC': 'tsrc',
                 'PRES': '-',
-                'W': '-'
+                'OMEGA': '-'
             }
             var2numzlevels = {
                 'TEMP': 113,
                 'QV': 113,
                 'QI': 113,
                 'QC': 113,
-                'OMEGA':113,
+                'W':113,
                 'SURF_PRES': 1,
                 'OLR': 1,
                 'IWV': 1,
@@ -1957,7 +2055,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'OLRC': 1,
                 'STOAC': 1,
                 'PRES': '-',
-                'W': '-'
+                'OMEGA': '-'
             }
 
 
@@ -1981,7 +2079,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         filename = var2filename[var]
                         in_file = f'{filename}.{hour_con}'
                         in_file = os.path.join(stem, in_file)
-                        if var == 'TEMP' or var == 'SURF_PRES' or var == 'OMEGA':
+                        if var == 'TEMP' or var == 'SURF_PRES' or var == 'W':
                             in_file = in_file+'.grib'
 
                         date_str = time[i].strftime("%m%d")
@@ -2039,21 +2137,99 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
         
     return models_list, infile_list, tempfile_list, outfile_list, option_1_list, option_2_list
                     
-def get_preprocessing_ARPEGE_1_filelist(time_period, temp_dir):
+def get_preprocessing_ARPEGE_1_filelist(variables, time_period, temp_dir, **kwargs):
+    """ Returns filelist needed for preprocessing of ARPEGE raw output files.
+    
+    Parameters:
+        preprocess_dir (str): path to directory where preprocessing is done 
+            (output can only be written the same directory)
+        variables (list of str): list of variable names
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
     """
-    """
+    #TODO: different parameter codes for some days (2D variables)
+    #TODO: not all model levels included in 3D variables for 20180810 24:00
+    
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
-    infile_list = []
-    tempfile_list = []
+
+    infile_3D_list = []
+    infile_2D_list = []
+    outfileprefix_list = []
+    merge_list_3D = [] #verschachtelte Liste   
+    tempfile_list_3D = []    
+    filelist_2D = []    
+    tempfile_list_2D = []
+        
+    dyamond_dir = '/work/ka1081/DYAMOND/ARPEGE-NH-2.5km'
     
-    variables = ['2D', '3D']
+    variables_2D = ['SURF_PRES', 'OLR', 'STOA']
+    levels = np.arange(16, 76).astype(int)
+    var2code = {
+        'TEMP': '0.0.0',
+        'QV': '0.1.0',
+        'QI': '0.1.84',
+        'QC': '0.1.83',
+        'W': '0.2.9',
+        'OLR': '0.5.5',
+        'STOA': '0.4.9',
+        'SURF_PRES': '0.3.0'
+    }
     
-    for var in variables:
-        for i in np.arange(time.size):
-            for h in np.arange(3, 25, 3):
-                date_str = time[i].strftime("%Y%m%d")
-                hour_str = f'{h:02d}'+'00'
-                
+    var2t = {
+        'TEMP': '119',
+        'QV': '119',
+        'QI': '119',
+        'QC': '119',
+        'W': '119',
+        'OLR': '8',
+        'STOA': '8',
+        'SURF_PRES': '1'
+    }
+    
+    for i in np.arange(time.size):
+        if time[i].day == 10:
+            hours = np.arange(3, 22, 3)
+        else:
+            hours = np.arange(3, 25, 3)
+          
+        date_str = time[i].strftime('%Y%m%d')
+        
+        for h in hours:
+            hour_str = f'{h:02d}'
+            infile_3D = f'ARPNH3D{date_str}{hour_str}00'
+            infile_2D = f'ARPNH2D{date_str}{hour_str}00'
+            infile_3D = os.path.join(dyamond_dir, date_str, infile_3D)
+            infile_2D = os.path.join(dyamond_dir, date_str, infile_2D)
+            infile_3D_list.append(infile_3D)
+            infile_2D_list.append(infile_2D)
+            outfileprefix = date_str+hour_str
+            outfileprefix = os.path.join(temp_dir, outfileprefix)
+            outfileprefix_list.append(outfileprefix)
+            merge_sublist = []
+            tempfile_sublist_3D = []
+            tempfile_sublist_2D = []
+            file_sublist_2D = []
+            for var in variables:
+                code = var2code[var]
+                tcode = var2t[var]
+                if var not in variables_2D:
+                    mergefiles = [os.path.join(temp_dir, f'{date_str}{hour_str}.t{tcode}.l{l}00.grb.{code}.gp')\
+                                  for l in levels]
+                    merge_sublist.append(mergefiles)
+                    tempfile = os.path.join(temp_dir, f'{date_str}{hour_str}_{var}.gp')
+                    tempfile_sublist_3D.append(tempfile)
+                else:
+                    file = os.path.join(temp_dir, f'{date_str}{hour_str}.t{tcode}.l000.grb.{code}.gp')
+                    file_sublist_2D.append(file)
+                    tempfile = os.path.join(temp_dir, f'{date_str}{hour_str}_{var}.gp')
+                    tempfile_sublist_2D.append(tempfile)
+            merge_list_3D.append(merge_sublist)
+            tempfile_list_3D.append(tempfile_sublist_3D)
+            tempfile_list_2D.append(tempfile_sublist_2D) 
+            filelist_2D.append(file_sublist_2D)
+        
+    return infile_2D_list, infile_3D_list, outfileprefix_list, merge_list_3D, tempfile_list_3D, filelist_2D, tempfile_list_2D
+
     
 def get_mergingfilelist(models, runs, variables, time_period, vinterp, temp_dir, data_dir, **kwargs):
     """ Returns a list of filenames of horizontally interpolated DYAMOND output needed for time merging.
@@ -2330,6 +2506,8 @@ def get_wcalculation_filelist(models, runs, time_period, num_timesteps, data_dir
     Input files consist of three files containing horizontally interpolated and merged temperature, 
     specific humidity and pressure.
     
+    NOT NEEDED ANY MORE!!!
+    
     Parameters:
         models (list of str): names of models
         runs (list of str): names of model runs
@@ -2543,9 +2721,16 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
     
     return model_list, run_list, infile_list, outfile_list
     
-def get_IFS_pressure_scaling_parameters():
-    a = np.array([0,0,3.757813,22.835938,62.78125,122.101563,202.484375,302.476563,424.414063,568.0625,734.992188,926.507813,1143.25,1387.546875,1659.476563,1961.5,2294.242188,2659.140625,3057.265625,3489.234375,3955.960938,4457.375,4993.796875,5564.382813,6168.53125,6804.421875,7470.34375,8163.375,8880.453125,9617.515625,10370.17578,11133.30469,11901.33984,12668.25781,13427.76953,14173.32422,14898.45313,15596.69531,16262.04688,16888.6875,17471.83984,18006.92578,18489.70703,18917.46094,19290.22656,19608.57227,19874.02539,20087.08594,20249.51172,20361.81641,20425.71875,20442.07813,20412.30859,20337.86328,20219.66406,20059.93164,19859.39063,19620.04297,19343.51172,19031.28906,18685.71875,18308.43359,17901.62109,17467.61328,17008.78906,16527.32227,16026.11523,15508.25684,14975.61523,14432.13965,13881.33106,13324.66895,12766.87305,12211.54785,11660.06738,11116.66211,10584.63184,10065.97852,9562.682617,9076.400391,8608.525391,8159.354004,7727.412109,7311.869141,6911.870605,6526.946777,6156.074219,5798.344727,5452.990723,5119.89502,4799.149414,4490.817383,4194.930664,3911.490479,3640.468262,3381.743652,3135.119385,2900.391357,2677.348145,2465.770508,2265.431641,2076.095947,1897.519287,1729.448975,1571.622925,1423.770142,1285.610352,1156.853638,1037.201172,926.34491,823.967834,729.744141,643.339905])
-    b = np.array([1,0.99763,0.995003,0.991984,0.9885,0.984542,0.980072,0.975078,0.969513,0.963352,0.95655,0.949064,0.94086,0.931881,0.922096,0.911448,0.8999,0.887408,0.873929,0.859432,0.843881,0.827256,0.809536,0.790717,0.770798,0.749797,0.727739,0.704669,0.680643,0.655736,0.630036,0.603648,0.576692,0.549301,0.521619,0.4938,0.466003,0.438391,0.411125,0.384363,0.358254,0.332939,0.308598,0.285354,0.263242,0.242244,0.222333,0.203491,0.185689,0.16891,0.153125,0.138313,0.124448,0.111505,0.099462,0.088286,0.077958,0.068448,0.059728,0.051773,0.044548,0.038026,0.032176,0.026964,0.022355,0.018318,0.014816,0.011806,0.009261,0.007133,0.005378,0.003971,0.002857,0.001992,0.001353,0.00089,0.000562,0.00034,0.000199,0.000112,0.000059,0.000024,0.000007,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+def get_pressure_scaling_parameters(model):
+    """
+    """
+    if model == 'IFS':
+        a = np.array([0,0,3.757813,22.835938,62.78125,122.101563,202.484375,302.476563,424.414063,568.0625,734.992188,926.507813,1143.25,1387.546875,1659.476563,1961.5,2294.242188,2659.140625,3057.265625,3489.234375,3955.960938,4457.375,4993.796875,5564.382813,6168.53125,6804.421875,7470.34375,8163.375,8880.453125,9617.515625,10370.17578,11133.30469,11901.33984,12668.25781,13427.76953,14173.32422,14898.45313,15596.69531,16262.04688,16888.6875,17471.83984,18006.92578,18489.70703,18917.46094,19290.22656,19608.57227,19874.02539,20087.08594,20249.51172,20361.81641,20425.71875,20442.07813,20412.30859,20337.86328,20219.66406,20059.93164,19859.39063,19620.04297,19343.51172,19031.28906,18685.71875,18308.43359,17901.62109,17467.61328,17008.78906,16527.32227,16026.11523,15508.25684,14975.61523,14432.13965,13881.33106,13324.66895,12766.87305,12211.54785,11660.06738,11116.66211,10584.63184,10065.97852,9562.682617,9076.400391,8608.525391,8159.354004,7727.412109,7311.869141,6911.870605,6526.946777,6156.074219,5798.344727,5452.990723,5119.89502,4799.149414,4490.817383,4194.930664,3911.490479,3640.468262,3381.743652,3135.119385,2900.391357,2677.348145,2465.770508,2265.431641,2076.095947,1897.519287,1729.448975,1571.622925,1423.770142,1285.610352,1156.853638,1037.201172,926.34491,823.967834,729.744141,643.339905])
+        b = np.array([1,0.99763,0.995003,0.991984,0.9885,0.984542,0.980072,0.975078,0.969513,0.963352,0.95655,0.949064,0.94086,0.931881,0.922096,0.911448,0.8999,0.887408,0.873929,0.859432,0.843881,0.827256,0.809536,0.790717,0.770798,0.749797,0.727739,0.704669,0.680643,0.655736,0.630036,0.603648,0.576692,0.549301,0.521619,0.4938,0.466003,0.438391,0.411125,0.384363,0.358254,0.332939,0.308598,0.285354,0.263242,0.242244,0.222333,0.203491,0.185689,0.16891,0.153125,0.138313,0.124448,0.111505,0.099462,0.088286,0.077958,0.068448,0.059728,0.051773,0.044548,0.038026,0.032176,0.026964,0.022355,0.018318,0.014816,0.011806,0.009261,0.007133,0.005378,0.003971,0.002857,0.001992,0.001353,0.00089,0.000562,0.00034,0.000199,0.000112,0.000059,0.000024,0.000007,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    elif model == 'ARPEGE':
+        a = np.array([1222.8013005419998, 1151.081140022, 1047.558699711, 916.5939116075, 770.0440539174999, 622.9077824315, 486.6332968815, 368.10595326199996, 270.203518668, 192.8273379845, 133.998038074, 90.79660478299999, 60.0589440985, 38.817746126, 24.5329218185, 15.1694680875, 9.1799852255, 5.437809149, 3.152733994, 1.7886128665, 0.9924604774999999, 0.5382769345, 0.2851399245, 0.147395167, 0.07427774100000001, 0.036453698, 0.0174054565, 0.008077108, 0.0036395365000000002, 0.001591072, 0.000674332, 0.00027691500000000003, 0.0001101345, 4.24125e-05, 1.5813e-05, 5.7085e-06, 1.996e-06, 6.760000000000001e-07, 2.22e-07, 7.05e-08, 2.15e-08, 6.5e-09, 2e-09, 5e-10, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]) #surface pressure?
+        b = np.array([0.033519443, 0.043141488500000005, 0.0538864905, 0.065179446, 0.07655079000000001, 0.087755708, 0.098617487, 0.109037617, 0.11898940250000001, 0.1285059975, 0.1376670545, 0.1465862685, 0.15540085, 0.1642631035, 0.173333806, 0.1827769155, 0.19275514300000002, 0.2034260255, 0.2149382755, 0.2274282975, 0.241016859, 0.2558059515, 0.271875918, 0.289282932, 0.3080569055, 0.3281999095, 0.34968516949999995, 0.3724566975, 0.39642960250000003, 0.4214911215, 0.447502403, 0.47430106299999997, 0.501704532, 0.529514206, 0.5575204085000001, 0.585508159, 0.6132637475, 0.6405821055, 0.6672749535, 0.6931797075, 0.7181691185000001, 0.7421616105, 0.7651322825, 0.787124532, 0.808262252, 0.828762547, 0.848636437, 0.8675177970000001, 0.8851629525, 0.9015718930000001, 0.916744609, 0.9306810925, 0.9433813345, 0.9548453275, 0.9650730654999999, 0.974064542, 0.981819751, 0.988338689, 0.9936213524999999, 0.9979768075]) #surface pressure?
+
     return a, b
         
 def latlonheightfield_to_netCDF(height, latitude, longitude, field, varname, varunit, outname, time_dim=False, time_var=None, overwrite=True):
