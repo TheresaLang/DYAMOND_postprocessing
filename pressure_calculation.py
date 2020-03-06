@@ -42,4 +42,4 @@ surf_pres_file = os.path.join(config['data_dir'], model,\
 timestep_ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to timestep
 
 # perform pressure calculation
-ptools.calc_level_pressure_from_surface_pressure_IFS(surf_pres_file, timestep_ID, model, run, **config)
+ptools.calc_level_pressure_from_surface_pressure(surf_pres_file, timestep_ID, model, run, **config)
