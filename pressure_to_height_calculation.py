@@ -34,7 +34,7 @@ config = ptools.config()
 models, runs, pres_files, temp_files, z0_files = ptools.get_height_calculation_filelist(**config)
 #z0_file = ptools.get_path2z0file(**config)
 
-timesteps = config['timesteps']
+timesteps = config['num_timesteps']
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0))
 timestep_ID = np.mod(ID, timesteps) # ID corresponds to timestep
 
