@@ -9,7 +9,6 @@ import random
 import pickle
 import analysis_tools as atools
 from time import sleep
-from cdo import Cdo
 from scipy.interpolate import interp1d
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
@@ -69,15 +68,15 @@ def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numt
         cmd_1 = f'cdo --eccodes select,name={option_selvar} {infile} {tempfile_1}'
         cmd_2 = f'grib_set -s editionNumber=1 {tempfile_1} {tempfile_2}'
         cmd_3 = f'rm {tempfile_1}'
-        cmd_4 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_2} {outfile}'
+        cmd_4 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_1} {outfile}'
         cmd_5 = f'rm {tempfile_2}'
         
         logger.info(cmd_1)
         os.system(cmd_1)
-        logger.info(cmd_2)
-        os.system(cmd_2)
-        logger.info(cmd_3)
-        os.system(cmd_3)
+        #logger.info(cmd_2)
+        #os.system(cmd_2)
+        #logger.info(cmd_3)
+        #os.system(cmd_3)
         logger.info(cmd_4)
         os.system(cmd_4)
         logger.info(cmd_5)
@@ -148,18 +147,20 @@ def preprocess_ARPEGE_1(preprocess_dir, infile_2D, infile_3D, outfileprefix, mer
         tempfile_list_2D (list of str): list of filenames of 2D variables (files produced by
             gribsplit are renamed)
     """
-    variables_3D = ['TEMP', 'QV', 'QI', 'QC', 'W']
-    variables_2D = ['SURF_PRES', 'OLR', 'STOA']
+    variables_3D = ['GH']#['TEMP', 'QV', 'QI', 'QC', 'W']
+    variables_2D = []#['SURF_PRES', 'OLR', 'STOA']
     
     # split file containing 3D variables
-    cmd_1 = f'{preprocess_dir}/mygribsplit {infile_3D} {outfileprefix}'
-    logger.info(cmd_1)
-    os.system(cmd_1)
+    if merge_list_3D:
+        cmd_1 = f'{preprocess_dir}/mygribsplit {infile_3D} {outfileprefix}'
+        logger.info(cmd_1)
+        os.system(cmd_1)
     
     # split file containing 2D variables
-    cmd_2 = f'{preprocess_dir}/mygribsplit {infile_2D} {outfileprefix}'
-    logger.info(cmd_2)
-    os.system(cmd_2)
+    if filelist_2D:
+        cmd_2 = f'{preprocess_dir}/mygribsplit {infile_2D} {outfileprefix}'
+        logger.info(cmd_2)
+        os.system(cmd_2)
      
     i = 0 # index for 3D variables
     j = 0 # index for 2D variables
@@ -232,8 +233,12 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
             in the format YYYY-mm-dd 
         temp_dir (str): Directory for output files
     """
-
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
+    if model == 'ARPEGE':
+        exclude_times = list(pd.date_range("2016-08-11 00:00:00", "2016-08-12 00:00:00", freq='3h'))
+        exclude_times.append(pd.to_datetime('2016-08-10 00:00:00'))
+        exclude_times.append(pd.to_datetime('2016-08-10 15:00:00'))
+        time = [t for t in time if t not in exclude_times]
     # variable names
     temp_name = 'TEMP'
     qv_name = 'QV'
@@ -351,50 +356,7 @@ def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile
     logger.info('Save file')
     print(outname)
     latlonheightfield_to_netCDF(height, lat, lon, w, 'W', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
-        
-def interpolate_vertically(infile, outfile, height_file, target_height_file, variable, **kwargs):
-    """ Interpolates field from from height levels given in height_file to new height levels 
-    given in target_height_file.
-    
-    Parameters:
-        infile (str): path to input file
-        outfile (str): path to output file containing interpolated field
-        height_file (str): path to file containing geometric heights corresponding to model levels
-        target_height_file (str): path to file containing target heights
-        variable (str): Name of variable to be processed (e.g. 'TEMP' or 'PRES')
-    """
-    # read variables from files
-    units = get_variable_units()
-    varnames = get_modelspecific_varnames(model)
-    varname = varnames[variable]
-    with Dataset(infile) as ds:
-        lat = ds.variables['lat'][:].filled(np.nan)
-        lon = ds.variables['lon'][:].filled(np.nan)
-        field = ds.variables[varname][0].filled(np.nan)
-
-    with Dataset(target_height_file) as dst:
-        target_height = dst.variables['target_height'][:].filled(np.nan)
-
-    with Dataset(height_file) as dsh:
-        var_height = dsh.variables['height'][:].filled(np.nan)
-    
-    nheight, nlat, nlon = field.shape
-    ntargetheight = len(target_height)
-    field_interp = np.ones((ntargetheight, nlat, nlon)) * np.nan
-    
-    # interpolate
-    for i in range(nlat):
-        logger.info(f'Lat: {i} of {nlat}')
-        for j in range(nlon):
-            field_interp[:, i, j] = interp1d(
-                var_height[:, i, j],
-                field[:, i, j],
-                bounds_error=False,
-                fill_value=np.nan)(target_height)
-    
-    # save interpolated field to netCDF file
-    latlonheightfield_to_netCDF(target_height, lat, lon, field_interp,\
-                                variable, units[variable], outfile, overwrite=True)  
+         
     
 def interpolate_vertically_per_timestep(infile, height_file, target_height_file, timestep, model, run, variable, time_period, temp_dir, **kwargs):
     """ Perform vertical interpolation for one timestep included in the input files. Every input file contains one variable.
@@ -413,6 +375,11 @@ def interpolate_vertically_per_timestep(infile, height_file, target_height_file,
             in the format YYYY-mm-dd 
     """
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
+    if model == 'ARPEGE':
+        exclude_times = list(pd.date_range("2016-08-11 00:00:00", "2016-08-12 00:00:00", freq='3h'))
+        exclude_times.append(pd.to_datetime('2016-08-10 00:00:00'))
+        exclude_times.append(pd.to_datetime('2016-08-10 15:00:00'))
+        time = [t for t in time if t not in exclude_times]
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_{variable}_hinterp_vinterp_{date_str}_{hour_str}.nc'
@@ -494,7 +461,6 @@ def interpolation_to_halflevels_per_timestep(infile, model, run, variable, times
     field_interp = field[:-1] + 0.5 * np.diff(field, axis=0)    
     field_interp = np.expand_dims(field_interp, 0)
     height = np.arange(field_interp.shape[1])
-    
     # Save to file
     logger.info('Save to file')
     latlonheightfield_to_netCDF(height, lat, lon, field_interp, variable, units[variable], outname, time_dim=True, time_var=timestep*3, overwrite=True)
@@ -515,6 +481,12 @@ def calc_level_pressure_from_surface_pressure(surf_pres_file, timestep, model, r
             in the format YYYY-mm-dd 
     """
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
+    if model == 'ARPEGE':
+        exclude_times = list(pd.date_range("2016-08-11 00:00:00", "2016-08-12 00:00:00", freq='3h'))
+        exclude_times.append(pd.to_datetime('2016-08-10 00:00:00'))
+        exclude_times.append(pd.to_datetime('2016-08-10 15:00:00'))
+        time = [t for t in time if t not in exclude_times]
+        
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_PRES_{date_str}_{hour_str}_hinterp.nc'
@@ -524,7 +496,10 @@ def calc_level_pressure_from_surface_pressure(surf_pres_file, timestep, model, r
     logger.info('Read surface pressure from file')
     with Dataset(surf_pres_file) as ds:
         # calc surface pressure from logarithm of surface pressure
-        surf_pres = np.exp(ds.variables['SURF_PRES'][timestep].filled(np.nan))
+        if model == 'IFS':
+            surf_pres = np.exp(ds.variables['SURF_PRES'][timestep].filled(np.nan))
+        else:
+            surf_pres = ds.variables['SURF_PRES'][timestep].filled(np.nan)
         lat = ds.variables['lat'][:].filled(np.nan)
         lon = ds.variables['lon'][:].filled(np.nan)
     
@@ -532,10 +507,15 @@ def calc_level_pressure_from_surface_pressure(surf_pres_file, timestep, model, r
     logger.info('Calculate pressure')
     # Scaling parameters
     a, b = get_pressure_scaling_parameters(model)
+    if len(surf_pres.shape) == 2:
+        surf_pres = np.expand_dims(surf_pres, axis=0)
     pres = np.ones((len(a), surf_pres.shape[1], surf_pres.shape[2])) * np.nan    
     for la in range(surf_pres.shape[1]):
-        for lo in range(surf_pres.shape[2]):            
-            pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
+        for lo in range(surf_pres.shape[2]):
+            if model == 'IFS':
+                pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
+            else:
+                pres[:, la, lo] = surf_pres[:, la, lo] * b + a
             #return(a[ilev-1]+b[ilev-1]*surfacepressure)
             
     # Save to file
@@ -560,6 +540,11 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
         temp_dir (str): Path to directory for output files
     """
     time = pd.date_range(time_period[0], time_period[1]+'-21', freq='3h')
+    if model == 'ARPEGE':
+        exclude_times = list(pd.date_range("2016-08-11 00:00:00", "2016-08-12 00:00:00", freq='3h'))
+        exclude_times.append(pd.to_datetime('2016-08-10 00:00:00'))
+        exclude_times.append(pd.to_datetime('2016-08-10 15:00:00'))
+        time = [t for t in time if t not in exclude_times]
     date_str = time[timestep].strftime('%m%d')
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_H_{date_str}_{hour_str}_hinterp.nc'
@@ -601,11 +586,14 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
             z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
         elif model == 'FV3':
             z0 = ds.variables['z'][:].filled(np.nan)
+        elif model == 'ARPEGE':
+            z0 = ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g
+            
     
     # Calculate heights
     logger.info('Calculate heights')
     height = np.flipud(pressure2height(np.flipud(pres), np.flipud(temp), z0))
-    
+
     # Save to file
     logger.info('Save heights to file')
     h = np.arange(height.shape[0])
@@ -672,19 +660,15 @@ def deaccumulate_fields(model, infile, variable):
     latlonfield_to_netCDF(lat, lon, field_deacc, variable, 'W m^-2', outname, time_dim=True, time_var=time_new, overwrite=True)
     
 def pressure2height(p, T, z0=None):
-    r"""Convert pressure to height based on the hydrostatic equilibrium.
-    .. math::
-       z = \int -\frac{\mathrm{d}p}{\rho g}
+    """Convert pressure to height based on the hydrostatic equilibrium.
+
     Parameters:
         p (ndarray): Pressure [Pa].
         T (ndarray): Temperature [K].
-            If ``None`` the standard atmosphere is assumed.
-    See also:
-        .. autosummary::
-            :nosignatures:
-            standard_atmosphere
+        z0 (ndarray): Height of lowest pressure level [m].
+
     Returns:
-        ndarray: Relative height above lowest pressure level [m].
+        ndarray: Height [m].
     """
      
     layer_depth = np.diff(p, axis=0)
@@ -692,12 +676,9 @@ def pressure2height(p, T, z0=None):
     rho_layer = 0.5 * (rho[:-1] + rho[1:])
 
     z = np.cumsum(-layer_depth / (rho_layer * typhon.constants.g), axis=0) + z0
-    a = np.expand_dims(z0, axis=0)
     z = np.vstack((np.expand_dims(z0, axis=0), z))
     
     return z  
-
-
         
 def merge_timesteps(infiles, outfile, numthreads, **kwargs):
     """ Merge files containing several time steps to one file containing all time steps.
@@ -765,6 +746,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             (all timesteps are used; default)
     """
     
+    logger.info(model)
     logger.info('Config')
     variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'lat', 'lon', 'timestep']
     test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
@@ -782,11 +764,12 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     if model == 'GEOS':
         surface = -2
     
+    print(surface)
     logger.info('Read lats/lons from file')
     # lon, lat
     with Dataset(test_filename) as ds:
         dimensions = ds.variables[test_var].shape
-        test_field = ds.variables[test_var][0]
+        test_field = ds.variables[test_var][0].filled(np.nan)
         lat = ds.variables['lat'][:]
         lon = ds.variables['lon'][:]
         
@@ -813,8 +796,9 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         timesteps = timesteps[:-1]
         num_timesteps = num_timesteps - 1
     
-    print(f'Num_timesteps: {num_timesteps}')
     num_samples_timestep = int(num_samples_tot / num_timesteps)
+
+    #return nan_mask
     
     logger.info('Ocean mask')
     # get ocean_mask
@@ -828,7 +812,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     ocean_mask = ocean_mask[ocean_lat_ind][:, ocean_lon_ind].astype(int)
 #    lat_ocean = np.where(ocean_mask)[0]
 #    lon_ocean = np.where(ocean_mask)[1]
-    
+
     logger.info('Total mask')    
     total_mask = np.where(np.logical_and(ocean_mask, nan_mask))
     lat_not_masked = total_mask[0]
@@ -839,9 +823,8 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
 
     logger.info('Get indices')
     for t in range(num_timesteps):
-        for i in range(num_samples_timestep):
-            lat_inds[t, i] = np.random.choice(lat_not_masked, 1)[0].astype(int)
-            lon_inds[t, i] = np.random.choice(lon_not_masked, 1)[0].astype(int)
+        r = random.sample(list(zip(lat_not_masked, lon_not_masked)), num_samples_timestep)
+        lat_inds[t], lon_inds[t] = zip(*r)
           
     profiles = {}
     profiles_sorted = {}
@@ -855,11 +838,10 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         end = start + num_samples_timestep
         profiles['lat'][start:end] = lat[lat_inds[j]]
         profiles['lon'][start:end] = lon[lon_inds[j]]
-    
-    print('Read variables from files')
-
+    #return profiles, ocean_mask, nan_mask, total_mask, lat_inds, lon_inds, num_timesteps, num_samples_timestep, lon, lat
+    logger.info('Read variables from files')
     for i, var in enumerate(variables):
-        print(var)
+        logger.info(var)
         if var in variables_2D:
             profiles[var] = np.ones((num_samples_tot)) * np.nan
             profiles_sorted[var] = np.ones((num_samples_tot)) * np.nan
@@ -867,7 +849,10 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                 start = j * num_samples_timestep
                 end = start + num_samples_timestep
                 with Dataset(infiles[i]) as ds:
-                    profiles[var][start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j]]
+                    if model == 'NICAM':
+                        profiles[var][start:end] = ds.variables[var][t][0, lat_inds[j], lon_inds[j]].filled(np.nan)
+                    else:
+                        profiles[var][start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j]].filled(np.nan)
         else:
             profiles[var] = np.ones((num_levels, num_samples_tot)) * np.nan
             profiles_sorted[var] = np.ones((num_levels, num_samples_tot)) * np.nan
@@ -876,12 +861,15 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                 end = start + num_samples_timestep
                 with Dataset(infiles[i]) as ds:
                     if model == 'MPAS' and var in ['TEMP', 'PRES', 'QV', 'QI', 'QC']:
-                        profiles[var][:, start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j], :].transpose([1, 0])
+                        profiles[var][:, start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j], :].filled(np.nan).transpose([1, 0])
                     else:
-                        print(ds.variables[var][t][:, lat_inds[j], lon_inds[j]].shape)
-                        print(profiles[var][:, start:end].shape)
-                        print(num_samples_timestep)
-                        profiles[var][:, start:end] = ds.variables[var][t][:, lat_inds[j], lon_inds[j]]
+                        if model == 'SAM' and var == 'PRES':
+                            pres_mean = np.expand_dims(ds.variables['p'][:], 1) * 1e2
+                            pres_pert = ds.variables['PP'][t][:, lat_inds[j], lon_inds[j]].filled(np.nan)
+                            profiles[var][:, start:end] = pres_mean + pres_pert
+                            print(profiles[var][:, start:end])
+                        else:
+                            profiles[var][:, start:end] = ds.variables[var][t][:, lat_inds[j], lon_inds[j]].filled(np.nan)
                         
         if model == 'SAM' and var in ['QV', 'QI', 'QC']:
             profiles[var] *= 1e-3
@@ -909,7 +897,8 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                 profiles_sorted[var], var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outfiles[i], overwrite=True
             )
     
-def average_random_profiles(model, run, time_period, variables, num_samples, **kwargs):
+    
+def average_random_profiles(model, run, time_period, variables, num_samples, split_basins=False, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins. Output is saved as .pkl files.
     
     Parameters:
@@ -919,6 +908,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
             in the format YYYY-mm-dd 
         variables (list of str): names of variables
         num_samples (num): number of randomly selected profiles
+        split_basins (bool): if True, the tropics are split into individual baisins, i.e. Atlantic, Pacific, Indic. Default is False.
     """
 
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
@@ -940,10 +930,11 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
     with(Dataset(filename)) as ds:
         height = ds.variables['height'][:].filled(np.nan)
     num_levels = len(height)
-    profiles_sorted = {}
+    
     bins = np.arange(len(iwv_bin_bnds) - 1) 
-
     bin_count = np.zeros(len(iwv_bin_bnds) - 1)
+    
+    profiles_sorted = {}
     for var in variables:
         print(var)
         var_read = var
@@ -955,7 +946,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
 
     print('UTH and IWP')
     #Calculate UTH and IWP
-        
+  
     profiles_sorted['UTH'] = np.ones(len(profiles_sorted['RH'])) * np.nan
     profiles_sorted['IWP'] = np.ones(len(profiles_sorted['RH'])) * np.nan
 
@@ -978,10 +969,10 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
         height
     )
     
-    profiles_sorted['H_RH_peak'], _ = utils.rh_peak_height(
-        profiles_sorted['RH'], 
-        height
-    )
+    #profiles_sorted['H_RH_peak'], _ = utils.rh_peak_height(
+    #    profiles_sorted['RH'], 
+    #    height
+    #)
     
     print('allocate')
     percentiles = []
@@ -1265,7 +1256,8 @@ def get_modelspecific_varnames(model):
             'OLRC': 'OLRC',
             'STOA': 'STOA',
             'STOAC': 'STOAC',
-            'OMEGA': '-'
+            'OMEGA': '-',
+            'GH': 'GH'
         }
     elif model == 'SAM':
         varname = {
@@ -1344,7 +1336,9 @@ def get_modelspecific_varnames(model):
             'W': 'W',
             'QC': 'param83.1.0',
             'STOA': 'ACCSOB_T',
-            'OMEGA': 'W'
+            'OMEGA': 'W',
+            'PRES': 'PRES',
+            'GH': 'FI'
         }
 
     else:
@@ -1718,7 +1712,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'STOA': 178,
                 'OLRC': 209, 
                 'STOAC': 208,
-                'OMEGA': '-'
+                'OMEGA': '-',
+                'GH': 'FI'
             }
     #        var2unit = {
     #           'TEMP': 'K',
@@ -1730,7 +1725,10 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
     #        }
 
             for var in variables:
-                option = f'-chname,var{var2varnumber[var]},{var}'
+                if var == 'GH':
+                    option = f'-chname,{var2varnumber[var]},{var}'
+                else:
+                    option = f'-chname,var{var2varnumber[var]},{var}'
                 for i in np.arange(time.size):
                     for h in np.arange(0, 24, 3):
                         date_str = time[i].strftime("%m%d")
@@ -1964,7 +1962,15 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         hour_str = f'{h:02d}'
                         hour_file = f'{year_str}{date_str}{hour_str}_{var}.gp'
                         hour_file = os.path.join(temp_dir, hour_file)
-                        out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                        #ändern!
+                        if h == 24:
+                            hour_str_out = '00'
+                            time_out = time[i] + pd.Timedelta('1d')
+                            date_str_out = time_out.strftime("%m%d")
+                        else:
+                            hour_str_out = hour_str
+                            date_str_out = date_str
+                        out_file = f'{model}-{run}_{var}_{date_str_out}_{hour_str_out}_hinterp.nc'
                         out_file = os.path.join(temp_dir, out_file)
                         option = f'-setgrid,{griddesfile} -setgridtype,regular -chname,{varname},{var}'
                         raw_files.append(hour_file)
@@ -2025,7 +2031,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'STOA': 'mars_out',
                 'STOAC': 'mars_out',
                 'PRES': '-',
-                'OMEGA': '-'
+                'OMEGA': '-',
+                'GH': 'gg_mars_out_sfc_ps_orog'
             }
             var2variablename = {
                 'TEMP': 'T',
@@ -2040,7 +2047,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'STOA': 'tsr',
                 'STOAC': 'tsrc',
                 'PRES': '-',
-                'OMEGA': '-'
+                'OMEGA': '-',
+                'GH': 'FI'
             }
             var2numzlevels = {
                 'TEMP': 113,
@@ -2055,7 +2063,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'OLRC': 1,
                 'STOAC': 1,
                 'PRES': '-',
-                'OMEGA': '-'
+                'OMEGA': '-',
+                'GH': 1
             }
 
 
@@ -2069,7 +2078,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 # option 1: variable name in file
                 option_1 = f'{var2variablename[var]}'
                 # option 2: number of vertical levels (not needed for OLR and IWV):
-                if var in['OLR', 'STOA', 'OLRC', 'STOAC', 'IWV']:
+                if var in['OLR', 'STOA', 'OLRC', 'STOAC', 'IWV', 'GH']:
                     option_2 = ''
                 else:
                     option_2 = f'{var2numzlevels[var]}'
@@ -2079,7 +2088,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         filename = var2filename[var]
                         in_file = f'{filename}.{hour_con}'
                         in_file = os.path.join(stem, in_file)
-                        if var == 'TEMP' or var == 'SURF_PRES' or var == 'W':
+                        if var in ['TEMP', 'SURF_PRES', 'W', 'GH']:
                             in_file = in_file+'.grib'
 
                         date_str = time[i].strftime("%m%d")
@@ -2172,7 +2181,8 @@ def get_preprocessing_ARPEGE_1_filelist(variables, time_period, temp_dir, **kwar
         'W': '0.2.9',
         'OLR': '0.5.5',
         'STOA': '0.4.9',
-        'SURF_PRES': '0.3.0'
+        'SURF_PRES': '0.3.0',
+        'GH': '0.3.4'
     }
     
     var2t = {
@@ -2183,7 +2193,8 @@ def get_preprocessing_ARPEGE_1_filelist(variables, time_period, temp_dir, **kwar
         'W': '119',
         'OLR': '8',
         'STOA': '8',
-        'SURF_PRES': '1'
+        'SURF_PRES': '1',
+        'GH': '119'
     }
     
     for i in np.arange(time.size):
@@ -2213,8 +2224,11 @@ def get_preprocessing_ARPEGE_1_filelist(variables, time_period, temp_dir, **kwar
                 code = var2code[var]
                 tcode = var2t[var]
                 if var not in variables_2D:
-                    mergefiles = [os.path.join(temp_dir, f'{date_str}{hour_str}.t{tcode}.l{l}00.grb.{code}.gp')\
-                                  for l in levels]
+                    if var == 'GH':
+                        mergefiles = [os.path.join(temp_dir, f'{date_str}{hour_str}.t{tcode}.l7500.grb.{code}.gp')]
+                    else:
+                        mergefiles = [os.path.join(temp_dir, f'{date_str}{hour_str}.t{tcode}.l{l}00.grb.{code}.gp')\
+                                      for l in levels]
                     merge_sublist.append(mergefiles)
                     tempfile = os.path.join(temp_dir, f'{date_str}{hour_str}_{var}.gp')
                     tempfile_sublist_3D.append(tempfile)
@@ -2255,10 +2269,8 @@ def get_mergingfilelist(models, runs, variables, time_period, vinterp, temp_dir,
     for model, run in zip(models, runs):
         print(model)
         for var in variables:
-            print(var)
             infile_list.append([])
-            print(infile_list)
-            if vinterp == 1 and (model == 'GEOS' or model == 'IFS' or model == 'FV3'):
+            if vinterp == 1 and model in ['GEOS', 'IFS', 'FV3', 'ARPEGE']:
                 outfile_name = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date}-{end_date}.nc'
             else:
                 outfile_name = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
@@ -2275,27 +2287,40 @@ def get_mergingfilelist(models, runs, variables, time_period, vinterp, temp_dir,
                     infile_list[v].append(infile_name)
             else:
                 for i in np.arange(time.size):
-                    #if model == 'FV3':
-                    #    date_str = time[i].strftime("%Y%m%d")
-                    #else:
-                    date_str = time[i].strftime("%m%d")
-                    if model in ['GEOS', 'IFS', 'FV3'] and vinterp:
-                        for h in np.arange(0, 24, 3):
-                            infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'
-                            infile_name = os.path.join(temp_dir, infile_name)
-                            print(v)
-                            infile_list[v].append(infile_name)
+                    if not (model == 'ARPEGE' and time[i].month == 8 and time[i].day == 11):
+                        date_str = time[i].strftime("%m%d")
+                        if model == 'ARPEGE':
+                            if vinterp and var not in ['OLR', 'STOA']:
+                                for h in np.arange(0, 24, 3):
+                                    if not (time[i].day == 12 and time[i].month == 8 and h == 0)\
+                                    and not (time[i].day == 10 and time[i].month == 8 and h in [0, 15]):
+                                        infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'
+                                        infile_name = os.path.join(temp_dir, infile_name)
+                                        infile_list[v].append(infile_name)                                    
+                            else:
+                                for h in np.arange(0, 24, 3):
+                                    if not (time[i].day == 12 and time[i].month == 8 and h == 0)\
+                                    and not (time[i].day == 10 and time[i].month == 8 and h in [0, 15]):
+                                        infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'
+                                        infile_name = os.path.join(temp_dir, infile_name)
+                                        infile_list[v].append(infile_name)
 
-                    elif model in ['GEOS', 'IFS', 'MPAS', 'SAM'] or var in ['RH', 'WHL', 'H']:
-                        for h in np.arange(0, 24, 3):
-                            infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'
-                            infile_name = os.path.join(temp_dir, infile_name)
-                            infile_list[v].append(infile_name)
-                    else:
-                        infile_name = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
-                        infile_name = os.path.join(temp_dir, infile_name)
-                        print(v)
-                        infile_list[v].append(infile_name)
+                        else:
+                            if model in ['GEOS', 'IFS', 'FV3'] and vinterp:
+                                for h in np.arange(0, 24, 3):
+                                    infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'
+                                    infile_name = os.path.join(temp_dir, infile_name)
+                                    infile_list[v].append(infile_name)
+
+                            elif model in ['GEOS', 'IFS', 'MPAS', 'SAM'] or var in ['RH', 'WHL', 'H']:
+                                for h in np.arange(0, 24, 3):
+                                    infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'
+                                    infile_name = os.path.join(temp_dir, infile_name)
+                                    infile_list[v].append(infile_name)
+                            else:
+                                infile_name = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
+                                infile_name = os.path.join(temp_dir, infile_name)
+                                infile_list[v].append(infile_name)
             v += 1
      
     return infile_list, outfile_list
@@ -2705,7 +2730,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
         for var in variables:
             if model in ['ICON', 'MPAS'] and var == 'W':
                 var = 'WHL'
-            if model in ['IFS', 'GEOS', 'FV3'] and var not in variables_2D:
+            if model in ['IFS', 'GEOS', 'FV3', 'ARPEGE'] and var not in variables_2D:
                 file = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date_in}-{end_date_in}.nc'
             else: 
                 file = f'{model}-{run}_{var}_hinterp_merged_{start_date_in}-{end_date_in}.nc'
