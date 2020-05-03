@@ -1164,6 +1164,212 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
     with open(os.path.join(datapath, outname_bins), "wb" ) as outfile:
         pickle.dump(binned, outfile) 
 
+def average_random_profiles_per_basin(model, run, time_period, variables, num_samples, **kwargs):
+    """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
+    ocean basins. Output is saved as .pkl files.
+    
+    Parameters:
+        model (str): name of model
+        run (str): name of model run
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
+        variables (list of str): names of variables
+        num_samples (num): number of randomly selected profiles
+    """
+
+    time = pd.date_range(time_period[0], time_period[1], freq='1D')
+    start_date = time[0].strftime("%m%d")
+    end_date = time[-1].strftime("%m%d")
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
+    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
+    datapath = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/random_samples/'
+    filenames = '{}-{}_{}_sample_{}_{}-{}{}.nc'
+    perc_values = np.arange(1, 100.5, 1.0)
+    num_percs = len(perc_values)
+    iwv_bin_bnds = np.arange(0, 101, 1)
+    ic_thres = {
+        'QI': 0.001 * 1e-6,
+        'QC': 0.001 * 1e-6
+    }
+    ocean_basins = ['Pacific', 'Atlantic', 'Indic']
+    stats = ['mean', 'std', 'median', 'min', 'max', 'quart25', 'quart75']
+    
+    logger.info('Read data from files')
+    filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, '')
+    filename = os.path.join(datapath, filename)
+    with(Dataset(filename)) as ds:
+        height = ds.variables['height'][:].filled(np.nan)
+    num_levels = len(height)
+    
+    bins = np.arange(len(iwv_bin_bnds) - 1) 
+    bin_count = np.zeros(len(iwv_bin_bnds) - 1)
+    
+    profiles_sorted = {}
+    for var in variables+['lon', 'lat']:
+        logger.info(var)
+        filename = filenames.format(model, run, var, num_samples, start_date, end_date, '')
+        filename = os.path.join(datapath, filename)
+        with(Dataset(filename)) as ds:
+            profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
+    num_profiles = len(profiles_sorted[var])
+            
+    logger.info('Calc additional variables: IWP and H_tropo')
+    profiles_sorted['IWP'] = np.ones(num_profiles) * np.nan
+    profiles_sorted['IWP'] = utils.calc_IWP(
+        profiles_sorted['QI'], 
+        profiles_sorted['TEMP'], 
+        profiles_sorted['PRES'], 
+        profiles_sorted['QV'], 
+        height
+    )    
+    profiles_sorted['H_tropo'] = utils.tropopause_height(
+        profiles_sorted['TEMP'], 
+        height
+    )
+            
+    nan_mask = np.isnan(profiles_sorted['lon'])
+    for var in variables+['lon', 'lat', 'IWP', 'H_tropo']:
+        if var in variables_3D:
+            profiles_sorted[var] = profiles_sorted[var][:, np.logical_not(nan_mask)]
+        else:
+            profiles_sorted[var] = profiles_sorted[var][np.logical_not(nan_mask)]
+    
+    logger.info('Split profiles into corresponding ocean basins')
+    # determine ocean basin for each profile
+    basins = []
+    for lon, lat in zip(profiles_sorted['lon'], profiles_sorted['lat']):
+        basins.append(ocean_basin(lon, lat))
+    basins = np.array(basins)
+    
+    # split profiles into basins
+    profiles = {}
+    for basin in ocean_basins:
+        logger.info(basin)
+        profiles[basin] = {}
+        for var in variables+['lon', 'lat', 'IWP', 'H_tropo']:
+            if var in variables_3D:
+                profiles[basin][var] = profiles_sorted[var][:, basins == basin]
+            else:
+                profiles[basin][var] = profiles_sorted[var][basins == basin]
+
+    perc = {}
+    binned = {}
+    logger.info('Binning to percentile bins')
+    for b in ocean_basins:
+        logger.info(b)
+        perc[b] = {s: {} for s in stats+['percentiles']}
+        perc[b]['percentiles'] = np.asarray([np.percentile(profiles[b]['IWV'], p) for p in perc_values])
+        splitted_array = {}
+        for var in variables+['H_tropo', 'IWP']:
+            logger.info(var)
+            splitted_array[var] = {}
+            if var in variables_2D: 
+                splitted_array[var] = np.array_split(profiles[b][var], num_percs)
+                axis=0
+            else:
+                splitted_array[var] = np.array_split(profiles[b][var], num_percs, axis=1)
+                axis=1
+                
+            perc[b]['mean'][var] = np.asarray([np.mean(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['std'][var] = np.asarray([np.std(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['min'][var] = np.asarray([np.min(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['max'][var] = np.asarray([np.max(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['median'][var] = np.asarray([np.median(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['quart25'][var] = np.asarray([np.percentile(a, 25, axis=axis) for a in splitted_array[var]])
+            perc[b]['quart75'][var] = np.asarray([np.percentile(a, 75, axis=axis) for a in splitted_array[var]])
+        
+
+        # determine in-cloud ice/water content and cloud fraction in each bin
+        for condensate, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
+            perc[b]['mean'][content] = np.asarray(
+                [np.ma.average(a, weights=(a > ic_thres[condensate]), axis=1).filled(0) for a in splitted_array[condensate]]
+            )
+            perc[b]['mean'][fraction] = np.asarray(
+                [np.sum(a * (a > ic_thres[condensate]), axis=1) / a.shape[1] for a in splitted_array[condensate]]
+            )
+
+    logger.info('Binning to IWV bins')
+    for b in ocean_basins:
+        bin_idx = np.digitize(profiles[b]['IWV'], iwv_bin_bnds)
+        binned[b] = {s: {} for s in stats+['count']}
+        binned[b]['count'] = np.asarray([len(np.where(bin_idx == bi)[0]) for bi in bins])
+        binned_profiles = {}
+        for var in variables+['H_tropo', 'IWP']:
+            logger.info(var)
+            if var in variables_2D+['IWP', 'H_tropo']:
+                binned_profiles[var] = [profiles[b][var][bin_idx == bi] for bi in bins]
+                axis=0
+            else:
+                binned_profiles[var] = [profiles[b][var][:, bin_idx == bi] for bi in bins]
+                axis=1
+                
+            binned[b]['mean'][var] = np.asarray([np.mean(p, axis=axis) for p in binned_profiles[var]])
+            binned[b]['std'][var] = np.asarray([np.std(p, axis=axis) for p in binned_profiles[var]])
+            binned[b]['median'][var] = np.asarray([np.median(p, axis=axis) for p in binned_profiles[var]])
+            binned[b]['min'][var] = np.asarray(
+                [np.min(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            )
+            binned[b]['max'][var] = np.asarray(
+                [np.max(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            )
+            binned[b]['quart25'][var] = np.asarray(
+                [np.percentile(p, 25, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            )
+            binned[b]['quart75'][var] = np.asarray(
+                [np.percentile(p, 75, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            )
+            
+        # determine in-cloud ice/water content and cloud fraction in each bin    
+        for condensate, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
+            binned[b]['mean'][content] = np.asarray(
+                [np.ma.average(a, weights=(a > ic_thres[condensate]), axis=1).filled(0) for a in binned_profiles[condensate]]
+            )
+            binned[b]['mean'][fraction] = np.asarray(
+                [np.sum(a * (a > ic_thres[condensate]), axis=1) / a.shape[1] for a in binned_profiles[condensate]]
+            )
+        
+    logger.info('Write output')
+    #output files
+    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_basins_{num_samples}_0exp.pkl'
+    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_basins_{num_samples}_0exp.pkl'
+    
+    with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
+        pickle.dump(perc, outfile) 
+    with open(os.path.join(datapath, outname_binned), 'wb' ) as outfile:
+        pickle.dump(binned, outfile)
+        
+        
+def ocean_basin(lon, lat):
+    """ Returns the ocean basin for given longitude and latitude in the tropics.
+    
+    Parameters:
+        lon (float): Longitude (between -180 and 180)
+        lat (float): Latitude (between -30 and 30)
+    """
+    if lon < -70. and lon > -84. and lat < 9.:
+        basin = 'Pacific'
+    elif lon < -84. and lon > -90. and lat < 14.:
+        basin = 'Pacific'
+    elif lon < -90. and lon > -100. and lat < 18.:
+        basin = 'Pacific'
+    elif lon > 145. or lon < -100.:
+        basin = 'Pacific'
+    elif lon < 145. and lon > 100. and lat > 0.:
+        basin = 'Pacific'
+    elif lon > 20. and lon < 100.:
+        basin = 'Indic'
+    elif lon < 145. and lon > 100. and lat < 0.:
+        basin = 'Indic'
+    elif lon < 20. and lon > -70.:
+        basin = 'Atlantic'
+    elif lon < -70. and lon > -84. and lat > 9.:
+        basin = 'Atlantic'
+    elif lon < -84. and lon > -90. and lat > 14.:
+        basin = 'Atlantic'
+    elif lon < -90. and lon > -100. and lat > 18.:
+        basin = 'Atlantic'
+    
+    return basin
     
 def get_modelspecific_varnames(model):
     """ Returns dictionary with variable names for a specific model.
