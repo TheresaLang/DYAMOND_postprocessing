@@ -893,7 +893,8 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     
     
 def average_random_profiles(model, run, time_period, variables, num_samples, **kwargs):
-    """ Average randomly selected profiles in IWV percentile bins and IWV bins. Output is saved as .pkl files.
+    """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
+    ocean basins. Output is saved as .pkl files.
     
     Parameters:
         model (str): name of model
@@ -908,16 +909,19 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
     variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
-    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'H_RH_peak']
+    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
     datapath = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}.nc'
-    perc_values = np.arange(0, 100.5, 1.0)
+    perc_values = np.arange(1, 100.5, 1.0)
+    num_percs = len(perc_values)
     iwv_bin_bnds = np.arange(0, 101, 1)
     ic_thres = {
         'QI': 0.001 * 1e-6,
         'QC': 0.001 * 1e-6
     }
-    #2016-08-10
+    stats = ['mean', 'std', 'median', 'min', 'max', 'quart25', 'quart75']
+    
+    logger.info('Read data from files')
     filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, '')
     filename = os.path.join(datapath, filename)
     with(Dataset(filename)) as ds:
@@ -928,241 +932,119 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
     bin_count = np.zeros(len(iwv_bin_bnds) - 1)
     
     profiles_sorted = {}
-    for var in variables:
-        print(var)
-        var_read = var
-        filename = filenames.format(model, run, var_read, num_samples, start_date, end_date, '')
-        print(filename)
+    for var in variables+['lon', 'lat']:
+        logger.info(var)
+        filename = filenames.format(model, run, var, num_samples, start_date, end_date, '')
         filename = os.path.join(datapath, filename)
         with(Dataset(filename)) as ds:
-            profiles_sorted[var] = ds.variables[var_read][:].filled(np.nan)
-
-    print('UTH and IWP')
-    #Calculate UTH and IWP
+            profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
+    num_profiles = len(profiles_sorted[var])
+            
+    logger.info('Calc additional variables: IWP and H_tropo')
   
-    profiles_sorted['UTH'] = np.ones(len(profiles_sorted['RH'])) * np.nan
-    profiles_sorted['IWP'] = np.ones(len(profiles_sorted['RH'])) * np.nan
+    profiles_sorted['IWP'] = np.ones(num_profiles) * np.nan
 
-    #profiles_sorted['UTH'] = utils.calc_UTH(
-    #    profiles_sorted['RH'], 
-    #    profiles_sorted['QV'], 
-    #    profiles_sorted['TEMP'], 
-    #    profiles_sorted['PRES'], 
-    #    height
-    #)
     profiles_sorted['IWP'] = utils.calc_IWP(
         profiles_sorted['QI'], 
         profiles_sorted['TEMP'], 
         profiles_sorted['PRES'], 
         profiles_sorted['QV'], 
         height
-    )
+    )    
     profiles_sorted['H_tropo'] = utils.tropopause_height(
         profiles_sorted['TEMP'], 
         height
     )
+            
+    nan_mask = np.isnan(profiles_sorted['lon'])
     
-    #profiles_sorted['H_RH_peak'], _ = utils.rh_peak_height(
-    #    profiles_sorted['RH'], 
-    #    height
-    #)
+    for var in variables+['lon', 'lat', 'IWP', 'H_tropo']:
+        if var in variables_3D:
+            profiles_sorted[var] = profiles_sorted[var][:, np.logical_not(nan_mask)]
+        else:
+            profiles_sorted[var] = profiles_sorted[var][np.logical_not(nan_mask)]
+
+    perc = {s: {} for s in stats+['percentiles']}
+    binned = {s: {} for s in stats+['count']}
     
-    print('allocate')
-    percentiles = []
-    percentiles_ind = []
-    profiles_perc_mean = {}
-    profiles_perc_std = {}
-    profiles_perc_median = {}
-    profiles_perc_quart25 = {}
-    profiles_perc_quart75 = {}
-    profiles_perc_max = {}
-    profiles_perc_min = {}
+    logger.info('Binning to percentile bins')
+    perc['percentiles'] = np.asarray([np.percentile(profiles_sorted['IWV'], p) for p in perc_values])
+    splitted_array = {}
+    for var in variables+['H_tropo', 'IWP']:
+        logger.info(var)
+        splitted_array[var] = {}
+        if var in variables_2D: 
+            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs)
+            axis=0
+        else:
+            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=1)
+            axis=1
 
-    profiles_bin_mean = {}
-    profiles_bin_std = {}
-    profiles_bin_median = {}
-    profiles_bin_quart25 = {}
-    profiles_bin_quart75 = {}
-    profiles_bin_max = {}
-    profiles_bin_min = {}
+        perc['mean'][var] = np.asarray([np.mean(a, axis=axis) for a in splitted_array[var]])
+        perc['std'][var] = np.asarray([np.std(a, axis=axis) for a in splitted_array[var]])
+        perc['min'][var] = np.asarray([np.min(a, axis=axis) for a in splitted_array[var]])
+        perc['max'][var] = np.asarray([np.max(a, axis=axis) for a in splitted_array[var]])
+        perc['median'][var] = np.asarray([np.median(a, axis=axis) for a in splitted_array[var]])
+        perc['quart25'][var] = np.asarray([np.percentile(a, 25, axis=axis) for a in splitted_array[var]])
+        perc['quart75'][var] = np.asarray([np.percentile(a, 75, axis=axis) for a in splitted_array[var]])
 
-    # Binning to IWV 
+
+    # determine in-cloud ice/water content and cloud fraction in each bin
+    for condensate, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
+        perc['mean'][content] = np.asarray(
+            [np.ma.average(a, weights=(a > ic_thres[condensate]), axis=1).filled(0) for a in splitted_array[condensate]]
+        )
+        perc['mean'][fraction] = np.asarray(
+            [np.sum(a * (a > ic_thres[condensate]), axis=1) / a.shape[1] for a in splitted_array[condensate]]
+        )
+
+    logger.info('Binning to IWV bins')
     bin_idx = np.digitize(profiles_sorted['IWV'], iwv_bin_bnds)
-    bin_count = bin_count + np.asarray([len(np.where(bin_idx == b)[0]) for b in bins])
+    binned['count'] = np.asarray([len(np.where(bin_idx == bi)[0]) for bi in bins])
+    binned_profiles = {}
+    for var in variables+['H_tropo', 'IWP']:
+        logger.info(var)
+        if var in variables_2D+['IWP', 'H_tropo']:
+            binned_profiles[var] = [profiles_sorted[var][bin_idx == bi] for bi in bins]
+            axis=0
+        else:
+            binned_profiles[var] = [profiles_sorted[var][:, bin_idx == bi] for bi in bins]
+            axis=1
 
-    print('profiles bin')
-    for var in variables+['ICQI', 'ICQC', 'CFI', 'CFL', 'H_tropo', 'IWP']:
-        print(var)
-        if var in variables_2D+['IWP', 'H_tropo']:#UTH
-            profiles_bin_mean[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
-            profiles_bin_std[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
-            profiles_bin_median[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
-            profiles_bin_quart25[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
-            profiles_bin_quart75[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
-            profiles_bin_max[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
-            profiles_bin_min[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
+        binned['mean'][var] = np.asarray([np.mean(p, axis=axis) for p in binned_profiles[var]])
+        binned['std'][var] = np.asarray([np.std(p, axis=axis) for p in binned_profiles[var]])
+        binned['median'][var] = np.asarray([np.median(p, axis=axis) for p in binned_profiles[var]])
+        binned['min'][var] = np.asarray(
+            [np.min(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+        )
+        binned['max'][var] = np.asarray(
+            [np.max(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+        )
+        binned['quart25'][var] = np.asarray(
+            [np.percentile(p, 25, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+        )
+        binned['quart75'][var] = np.asarray(
+            [np.percentile(p, 75, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+        )
 
-            for b in bins:
-                bin_profiles = profiles_sorted[var][bin_idx == b]
-                profiles_bin_mean[var][b] = np.nanmean(bin_profiles) 
-                profiles_bin_std[var][b] = np.nanstd(bin_profiles)
-                profiles_bin_median[var][b] = np.nanmedian(bin_profiles)
-
-                try:
-                    profiles_bin_quart25[var][b] = np.nanpercentile(bin_profiles, 25)
-                    profiles_bin_quart75[var][b] = np.nanpercentile(bin_profiles, 75)
-                    profiles_bin_max[var][b] = np.nanmax(bin_profiles)
-                    profiles_bin_min[var][b] = np.nanmin(bin_profiles)
-                except:
-                    profiles_bin_quart25[var][b] = np.nan
-                    profiles_bin_quart75[var][b] = np.nan
-                    profiles_bin_max[var][b] = np.nan
-                    profiles_bin_min[var][b] = np.nan
-
-
-        elif var in variables_3D+['ICQI', 'ICQC', 'CFI', 'CFL']:
-            profiles_bin_mean[var] = np.ones((num_levels, len(iwv_bin_bnds) - 1)) * np.nan
-            profiles_bin_std[var] = np.ones((num_levels, len(iwv_bin_bnds) - 1)) * np.nan
-            profiles_bin_median[var] = np.ones((num_levels, len(iwv_bin_bnds) - 1)) * np.nan
-            profiles_bin_quart25[var] = np.ones((num_levels, len(iwv_bin_bnds) - 1)) * np.nan
-            profiles_bin_quart75[var] = np.ones((num_levels, len(iwv_bin_bnds) - 1)) * np.nan
-            profiles_bin_max[var] = np.ones((num_levels, len(iwv_bin_bnds) - 1)) * np.nan
-            profiles_bin_min[var] = np.ones((num_levels, len(iwv_bin_bnds) - 1)) * np.nan
-
-        if var in variables_3D:
-            for b in bins:
-                bin_profiles = profiles_sorted[var][:, bin_idx == b]
-                profiles_bin_mean[var][:, b] = np.nanmean(bin_profiles, axis=1)
-                profiles_bin_std[var][:, b] = np.nanstd(bin_profiles, axis=1) 
-                profiles_bin_median[var][:, b] = np.nanmedian(bin_profiles, axis=1) 
-
-                try:
-                    profiles_bin_quart25[var][:, b] = np.nanpercentile(bin_profiles, 25, axis=1)
-                    profiles_bin_quart75[var][:, b] = np.nanpercentile(bin_profiles, 75, axis=1)
-                    profiles_bin_max[var][:, b] = np.nanmax(bin_profiles, axis=1)
-                    profiles_bin_min[var][:, b] = np.nanmin(bin_profiles, axis=1)
-                except:
-                    profiles_bin_quart25[var][:, b] = np.ones(num_levels) * np.nan
-                    profiles_bin_quart75[var][:, b] = np.ones(num_levels) * np.nan
-                    profiles_bin_max[var][:, b] = np.ones(num_levels) * np.nan
-                    profiles_bin_min[var][:, b] = np.ones(num_levels) * np.nan
-
-
-    for p in perc_values:
-        perc = np.percentile(profiles_sorted['IWV'], p)
-        percentiles.append(perc)
-        percentiles_ind.append(np.argmin(np.abs(profiles_sorted['IWV'] - perc)))
-
-    print('profiles perc')
-    for var in variables+['ICQI', 'ICQC', 'CFI', 'CFL', 'H_tropo', 'IWP']:
-        print(var)
-        if var in variables_2D+['IWP', 'H_tropo']:#'UTH
-            profiles_perc_mean[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
-            profiles_perc_std[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
-            profiles_perc_median[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
-            profiles_perc_quart25[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
-            profiles_perc_quart75[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
-            profiles_perc_min[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
-            profiles_perc_max[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
-
-            for j in range(len(percentiles_ind)-1):
-                start_ind = percentiles_ind[j]
-                end_ind = percentiles_ind[j+1]
-                profiles_perc_mean[var][j] = np.nanmean(profiles_sorted[var][start_ind:end_ind], axis=0)
-                profiles_perc_std[var][j] = np.nanstd(profiles_sorted[var][start_ind:end_ind], axis=0)
-                profiles_perc_median[var][j] = np.nanmedian(profiles_sorted[var][start_ind:end_ind], axis=0)
-                profiles_perc_quart25[var][j] = np.nanpercentile(profiles_sorted[var][start_ind:end_ind], 25, axis=0)
-                profiles_perc_quart75[var][j] = np.nanpercentile(profiles_sorted[var][start_ind:end_ind], 75, axis=0)
-                profiles_perc_min[var][j] = np.nanmin(profiles_sorted[var][start_ind:end_ind], axis=0)
-                profiles_perc_max[var][j] = np.nanmax(profiles_sorted[var][start_ind:end_ind], axis=0)
-
-        elif var in variables_3D+['ICQI', 'ICQC', 'CFI', 'CFL']:
-            profiles_perc_mean[var] = np.ones((len(percentiles_ind)-1, num_levels)) * np.nan    
-            profiles_perc_std[var] = np.ones((len(percentiles_ind)-1, num_levels)) * np.nan
-            profiles_perc_median[var] = np.ones((len(percentiles_ind)-1, num_levels)) * np.nan
-            profiles_perc_quart25[var] = np.ones((len(percentiles_ind)-1, num_levels)) * np.nan
-            profiles_perc_quart75[var] = np.ones((len(percentiles_ind)-1, num_levels)) * np.nan
-            profiles_perc_min[var] = np.ones((len(percentiles_ind)-1, num_levels)) * np.nan
-            profiles_perc_max[var] = np.ones((len(percentiles_ind)-1, num_levels)) * np.nan
-
-        if var in variables_3D:
-            for j in range(len(percentiles_ind)-1):
-                start_ind = percentiles_ind[j]
-                end_ind = percentiles_ind[j+1]
-                profiles_perc_mean[var][j] = np.nanmean(profiles_sorted[var][:, start_ind:end_ind], axis=1)
-                profiles_perc_std[var][j] = np.nanstd(profiles_sorted[var][:, start_ind:end_ind], axis=1)
-                profiles_perc_median[var][j] = np.nanmedian(profiles_sorted[var][:, start_ind:end_ind], axis=1)
-                profiles_perc_quart25[var][j] = np.nanpercentile(profiles_sorted[var][:, start_ind:end_ind], 25, axis=1)
-                profiles_perc_quart75[var][j] = np.nanpercentile(profiles_sorted[var][:, start_ind:end_ind], 75, axis=1)
-                profiles_perc_min[var][j] = np.nanmin(profiles_sorted[var][:, start_ind:end_ind], axis=1)
-                profiles_perc_max[var][j] = np.nanmax(profiles_sorted[var][:, start_ind:end_ind], axis=1)
-
-
-    for j in range(len(percentiles_ind)-1):
-        start_ind = percentiles_ind[j]
-        end_ind = percentiles_ind[j+1]
-
-        for var, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
-            q_profiles_perc = profiles_sorted[var][:, start_ind:end_ind]
-            print(q_profiles_perc)
-            q_profiles_perc[q_profiles_perc <= ic_thres[var]] = np.nan
-            profiles_perc_mean[content][j] = np.nanmean(q_profiles_perc, axis=1)
-            profiles_perc_mean[fraction][j] = np.sum(~np.isnan(q_profiles_perc), axis=1) / q_profiles_perc.shape[1]
-            profiles_perc_std[content][j] = np.nanstd(q_profiles_perc, axis=1)
-            profiles_perc_median[content][j] = np.nanmedian(q_profiles_perc, axis=1)
-            profiles_perc_quart25[content][j] = np.nanpercentile(q_profiles_perc, 25, axis=1)
-            profiles_perc_quart75[content][j] = np.nanpercentile(q_profiles_perc, 75, axis=1)
-            profiles_perc_min[content][j] = np.nanmin(q_profiles_perc, axis=1)
-            profiles_perc_max[content][j] = np.nanmax(q_profiles_perc, axis=1)
-
-    for b in bins:
-        for var, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
-            q_profiles_bin = profiles_sorted[var][:, bin_idx == b]
-            q_profiles_bin[q_profiles_bin <= ic_thres[var]] = np.nan
-            profiles_bin_mean[content][:, b] = np.nanmean(q_profiles_bin, axis=1)
-            profiles_bin_mean[fraction][:, b] = np.sum(~np.isnan(q_profiles_bin), axis=1) / q_profiles_bin.shape[1]
-            profiles_bin_std[content][:, b] = np.nanstd(q_profiles_bin, axis=1) 
-            profiles_bin_median[content][:, b] = np.nanmedian(q_profiles_bin, axis=1) 
-
-            try:
-                profiles_bin_quart25[content][:, b] = np.nanpercentile(q_profiles_bin, 25, axis=1)
-                profiles_bin_quart75[content][:, b] = np.nanpercentile(q_profiles_bin, 75, axis=1)
-                profiles_bin_max[content][:, b] = np.nanmax(q_profiles_bin, axis=1)
-                profiles_bin_min[content][:, b] = np.nanmin(q_profiles_bin, axis=1)
-            except:
-                profiles_bin_quart25[content][:, b] = np.ones(num_levels) * np.nan
-                profiles_bin_quart75[content][:, b] = np.ones(num_levels) * np.nan
-                profiles_bin_max[content][:, b] = np.ones(num_levels) * np.nan
-                profiles_bin_min[content][:, b] = np.ones(num_levels) * np.nan
-
-    # write output:
+    # determine in-cloud ice/water content and cloud fraction in each bin    
+    for condensate, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
+        binned['mean'][content] = np.asarray(
+            [np.ma.average(a, weights=(a > ic_thres[condensate]), axis=1).filled(0) for a in binned_profiles[condensate]]
+        )
+        binned['mean'][fraction] = np.asarray(
+            [np.sum(a * (a > ic_thres[condensate]), axis=1) / a.shape[1] for a in binned_profiles[condensate]]
+        )
+        
+    logger.info('Write output')
     #output files
-    outname_perc = f"{model}-{run}_{start_date}-{end_date}_perc_means_{num_samples}_0exp.pkl"
-    outname_bins = f"{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}_0exp.pkl"
-
-    perc = {}
-    perc['mean'] = profiles_perc_mean
-    perc['std'] = profiles_perc_std
-    perc['median'] = profiles_perc_median
-    perc['quart25'] = profiles_perc_quart25
-    perc['quart75'] = profiles_perc_quart75
-    perc['min'] = profiles_perc_min
-    perc['max'] = profiles_perc_max
-    perc['percentiles'] = percentiles
-    with open(os.path.join(datapath, outname_perc), "wb" ) as outfile:
+    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_{num_samples}_1exp.pkl'
+    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}_1exp.pkl'
+    
+    with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
         pickle.dump(perc, outfile) 
-
-    binned = {}
-    binned['mean'] = profiles_bin_mean
-    binned['std'] = profiles_bin_std
-    binned['median'] = profiles_bin_median
-    binned['quart25'] = profiles_bin_quart25
-    binned['quart75'] = profiles_bin_quart75
-    binned['min'] = profiles_bin_min
-    binned['max'] = profiles_bin_max
-    binned['count'] = bin_count
-    with open(os.path.join(datapath, outname_bins), "wb" ) as outfile:
-        pickle.dump(binned, outfile) 
+    with open(os.path.join(datapath, outname_binned), 'wb' ) as outfile:
+        pickle.dump(binned, outfile)
 
 def average_random_profiles_per_basin(model, run, time_period, variables, num_samples, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
