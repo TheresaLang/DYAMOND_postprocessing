@@ -61,35 +61,32 @@ def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numt
     filename, file_extension = os.path.splitext(tempfile)
     tempfile_1 = tempfile
     tempfile_2 = filename+'_2'+file_extension
-    tempfile_3 = filename+'_3'+file_extension
+    #tempfile_3 = filename+'_3'+file_extension
     
     # for OLR and IWV less pre-processing steps are needed than for the other variables
     if option_nzlevs == '':
         cmd_1 = f'cdo --eccodes select,name={option_selvar} {infile} {tempfile_1}'
-        cmd_2 = f'grib_set -s editionNumber=1 {tempfile_1} {tempfile_2}'
+        #cmd_2 = f'grib_set -s editionNumber=1 {tempfile_1} {tempfile_2}'
+        #cmd_3 = f'rm {tempfile_1}'
+        cmd_2 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_1} {outfile}'
         cmd_3 = f'rm {tempfile_1}'
-        cmd_4 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_1} {outfile}'
-        cmd_5 = f'rm {tempfile_2}'
         
         logger.info(cmd_1)
         os.system(cmd_1)
-        #logger.info(cmd_2)
-        #os.system(cmd_2)
-        #logger.info(cmd_3)
-        #os.system(cmd_3)
-        logger.info(cmd_4)
-        os.system(cmd_4)
-        logger.info(cmd_5)
-        os.system(cmd_5)
+        logger.info(cmd_2)
+        os.system(cmd_2)
+        logger.info(cmd_3)
+        os.system(cmd_3)
         
     else:
         cmd_1 = f'cdo --eccodes select,name={option_selvar} {infile} {tempfile_1}'
         cmd_2 = f'grib_set -s numberOfVerticalCoordinateValues={option_nzlevs} {tempfile_1} {tempfile_2}'
         cmd_3 = f'rm {tempfile_1}'
-        cmd_4 = f'grib_set -s editionNumber=1 {tempfile_2} {tempfile_3}'
+        #cmd_4 = f'grib_set -s editionNumber=1 {tempfile_2} {tempfile_3}'
+        #cmd_5 = f'rm {tempfile_2}'
+        #cmd_6 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_3} {outfile}'
+        cmd_4 = f'cdo -P {numthreads} -f nc4 -setgridtype,regular {tempfile_2} {outfile}'
         cmd_5 = f'rm {tempfile_2}'
-        cmd_6 = f'cdo -P {numthreads} -R -f nc4 copy {tempfile_3} {outfile}'
-        cmd_7 = f'rm {tempfile_3}'
 
         logger.info(cmd_1)
         os.system(cmd_1)
@@ -101,10 +98,7 @@ def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numt
         os.system(cmd_4)
         logger.info(cmd_5)
         os.system(cmd_5)
-        logger.info(cmd_6)
-        os.system(cmd_6)
-        logger.info(cmd_7)
-        os.system(cmd_7)
+
 
 def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwargs):
     """ Perform processing steps required before horizontal interpolation for the MPAS model.
@@ -147,8 +141,8 @@ def preprocess_ARPEGE_1(preprocess_dir, infile_2D, infile_3D, outfileprefix, mer
         tempfile_list_2D (list of str): list of filenames of 2D variables (files produced by
             gribsplit are renamed)
     """
-    variables_3D = ['GH']#['TEMP', 'QV', 'QI', 'QC', 'W']
-    variables_2D = []#['SURF_PRES', 'OLR', 'STOA']
+    variables_3D = ['GH', 'TEMP', 'QV', 'QI', 'QC', 'W']
+    variables_2D = ['SURF_PRES', 'OLR', 'STOA']
     
     # split file containing 3D variables
     if merge_list_3D:
@@ -898,7 +892,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             )
     
     
-def average_random_profiles(model, run, time_period, variables, num_samples, split_basins=False, **kwargs):
+def average_random_profiles(model, run, time_period, variables, num_samples, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins. Output is saved as .pkl files.
     
     Parameters:
@@ -908,7 +902,6 @@ def average_random_profiles(model, run, time_period, variables, num_samples, spl
             in the format YYYY-mm-dd 
         variables (list of str): names of variables
         num_samples (num): number of randomly selected profiles
-        split_basins (bool): if True, the tropics are split into individual baisins, i.e. Atlantic, Pacific, Indic. Default is False.
     """
 
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
@@ -998,7 +991,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, spl
     bin_count = bin_count + np.asarray([len(np.where(bin_idx == b)[0]) for b in bins])
 
     print('profiles bin')
-    for var in variables+['ICQI', 'ICQC', 'CFI', 'CFL', 'H_tropo', 'IWP', 'H_RH_peak']:
+    for var in variables+['ICQI', 'ICQC', 'CFI', 'CFL', 'H_tropo', 'IWP']:
         print(var)
         if var in variables_2D+['IWP', 'H_tropo']:#UTH
             profiles_bin_mean[var] = np.ones(len(iwv_bin_bnds) - 1) * np.nan
@@ -1061,7 +1054,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, spl
         percentiles_ind.append(np.argmin(np.abs(profiles_sorted['IWV'] - perc)))
 
     print('profiles perc')
-    for var in variables+['ICQI', 'ICQC', 'CFI', 'CFL', 'H_tropo', 'IWP', 'H_RH_peak']:
+    for var in variables+['ICQI', 'ICQC', 'CFI', 'CFL', 'H_tropo', 'IWP']:
         print(var)
         if var in variables_2D+['IWP', 'H_tropo']:#'UTH
             profiles_perc_mean[var] = np.ones((len(percentiles_ind)-1)) * np.nan 
@@ -1170,7 +1163,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, spl
     binned['count'] = bin_count
     with open(os.path.join(datapath, outname_bins), "wb" ) as outfile:
         pickle.dump(binned, outfile) 
-    
+
     
 def get_modelspecific_varnames(model):
     """ Returns dictionary with variable names for a specific model.
@@ -1715,6 +1708,22 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OMEGA': '-',
                 'GH': 'FI'
             }
+            var2variablename = {
+                'TEMP': 'T',
+                'QV': 'QV',
+                'SURF_PRES': 'lnsp',
+                'IWV': 'tcwv',#
+                'QI': 'param84.1.0', 
+                'QC': 'param83.1.0',
+                'W': 'param120.128.192',
+                'OLR': 'ttr',
+                'OLRC': 'ttrc',
+                'STOA': 'tsr',
+                'STOAC': 'tsrc',
+                'PRES': '-',
+                'OMEGA': '-',
+                'GH': 'FI'
+            }
     #        var2unit = {
     #           'TEMP': 'K',
     #            'QV': 'kg kg^-1',
@@ -1725,10 +1734,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
     #        }
 
             for var in variables:
-                if var == 'GH':
-                    option = f'-chname,{var2varnumber[var]},{var}'
-                else:
-                    option = f'-chname,var{var2varnumber[var]},{var}'
+                #option = f'-chname,var{var2varnumber[var]},{var}'
+                option = f'-chname,{var2variablename[var]},{var}'
                 for i in np.arange(time.size):
                     for h in np.arange(0, 24, 3):
                         date_str = time[i].strftime("%m%d")
@@ -2034,6 +2041,9 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'OMEGA': '-',
                 'GH': 'gg_mars_out_sfc_ps_orog'
             }
+            if run == '9.0km':
+                var2filename['SURF_PRES'] = 'mars_out_sfc_ps_orog_gg'
+                
             var2variablename = {
                 'TEMP': 'T',
                 'QV': 'QV',
@@ -2088,7 +2098,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         filename = var2filename[var]
                         in_file = f'{filename}.{hour_con}'
                         in_file = os.path.join(stem, in_file)
-                        if var in ['TEMP', 'SURF_PRES', 'W', 'GH']:
+                        if var in ['TEMP', 'W', 'GH'] or (var == 'SURF_PRES' and run == '4.0km'):
                             in_file = in_file+'.grib'
 
                         date_str = time[i].strftime("%m%d")
