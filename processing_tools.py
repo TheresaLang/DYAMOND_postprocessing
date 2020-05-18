@@ -1585,6 +1585,10 @@ def get_path2weights(model, run, grid_res, **kwargs):
             weights = 'ARPEGE-2.5km_0.10_grid_wghts.nc'
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported run is: "2.5km".')
+    
+    elif model == 'ERA5':
+        grid_dir = '/mnt/lustre02/work/mh1126/m300773/ERA5'
+        weights = 'ERA5-31.0km_0.10_grid_wghts.nc'
     # other models...
     else:
         logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
@@ -2115,7 +2119,30 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         options.append(option)
                         weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
-                               
+        
+        elif model == 'ERA5':
+            var2variablename = {
+                'TEMP': 'T',
+                'QV': 'QV',
+                'SURF_PRES': 'lnsp',
+                'QI': 'param84.1.0', 
+                'QC': 'param83.1.0',
+                'OMEGA': 'param120.128.192'
+            }
+            for var in variables:
+                option = f'-chname,{var2variablename[var]},{var}'
+                for i in np.arange(time.size):
+                    date_str = time[i].strftime("%m%d")
+                    day_file = f'{model}-{run}_{var}_{date_str}.nc'
+                    out_file = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
+                    day_file = os.path.join(temp_dir, day_file)
+                    out_file = os.path.join(temp_dir, out_file)
+                    raw_files.append(day_file)
+                    out_files.append(out_file)
+                    options.append(option)
+                    weights.append(get_path2weights(model, run, grid_res))
+                    grids.append(get_path2grid(grid_res))
+        
         else:
             logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
             return None
