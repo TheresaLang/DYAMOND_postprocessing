@@ -294,7 +294,7 @@ def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile
     Note: Only one timestep is selected from input files, output files contain one time step per file and have to be
     merged afterwards. 
     
-    NOT NEEDED ANY MORE!
+    Needed for ERA5 only 
     
     Parameters:
         omega_file (str): File containing pressure velocity omega (all timesteps)
@@ -408,7 +408,7 @@ def interpolate_vertically_per_timestep(infile, height_file, target_height_file,
                 var_height[:, i, j],
                 field[:, i, j],
                 bounds_error=False,
-                fill_value=np.nan)(target_height)
+                fill_value='extrapolate')(target_height)
     
     # save interpolated field to netCDF file
     logger.info('Save to file')
@@ -581,7 +581,8 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
         elif model == 'FV3':
             z0 = ds.variables['z'][:].filled(np.nan)
         elif model == 'ARPEGE':
-            z0 = ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g
+            z0 = np.ones((len(lat), len(lon))) * 17. # lowest model level is at 17 meters above sea level
+            #ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g
             
     
     # Calculate heights
@@ -720,7 +721,7 @@ def select_lonlatbox(infile, outfile, lonlatbox, numthreads, **kwargs):
     os.system(cmd)
 
 def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heightfile, landmaskfile,\
-                               variables, lonlatbox, vinterp, data_dir, timesteps=None, **kwargs):
+                               variables, lonlatbox, vinterp, data_dir, sample_days, timesteps=None, **kwargs):
     """ Selects a subset of random profiles from (horizontally interpolated) model fields, sorts them by their integrated
     water vapor and saves them.
     
@@ -736,6 +737,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         lonlatbox (list of floats): Boundaries of lon-lat box to select [lonmin, lonmax, latmin, latmax]
         vinterp (boolean): True, if data is already interpolated vertically 
         data_dir (str): Path to output directory
+        sample_days (str): 'First10', 'Last10' or 'all'
         timesteps (1darray or None): Either a 1darray containing timesteps to use or None 
             (all timesteps are used; default)
     """
@@ -783,10 +785,17 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     if timesteps is not None:
         num_timesteps = len(timesteps)
     else:
-        num_timesteps = dimensions[0]
-        timesteps = np.arange(num_timesteps)
+        if sample_days.lower() == 'all':
+            num_timesteps = dimensions[0]
+            timesteps = np.arange(num_timesteps)
+        elif sample_days.lower() == 'first10':
+            num_timesteps = 80
+            timesteps = np.arange(0, num_timesteps)
+        elif sample_days.lower() == 'last10':
+            num_timesteps = 80
+            timesteps = np.arange(dimensions[0] - 80, dimensions[0])
         
-    if model in ['MPAS', 'IFS']:
+    if model in ['MPAS', 'IFS', 'ARPEGE']:
         timesteps = timesteps[:-1]
         num_timesteps = num_timesteps - 1
     
@@ -892,7 +901,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             )
     
     
-def average_random_profiles(model, run, time_period, variables, num_samples, **kwargs):
+def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
     ocean basins. Output is saved as .pkl files.
     
@@ -903,6 +912,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
             in the format YYYY-mm-dd 
         variables (list of str): names of variables
         num_samples (num): number of randomly selected profiles
+        sample_days (str): 'all', 'first10' or 'last10'
     """
 
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
@@ -911,7 +921,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
     variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
     datapath = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/random_samples/'
-    filenames = '{}-{}_{}_sample_{}_{}-{}{}.nc'
+    filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
     perc_values = np.arange(1, 100.5, 1.0)
     num_percs = len(perc_values)
     iwv_bin_bnds = np.arange(0, 101, 1)
@@ -920,21 +930,25 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
         'QC': 0.001 * 1e-6
     }
     stats = ['mean', 'std', 'median', 'min', 'max', 'quart25', 'quart75']
+    if sample_days == 'all':
+        sample_days_str = ''
+    else:
+        sample_days_str = '_'+sample_days
     
     logger.info('Read data from files')
-    filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, '')
+    filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, sample_days_str, '')
     filename = os.path.join(datapath, filename)
     with(Dataset(filename)) as ds:
         height = ds.variables['height'][:].filled(np.nan)
     num_levels = len(height)
     
-    bins = np.arange(len(iwv_bin_bnds) - 1) 
+    bins = np.arange(1, len(iwv_bin_bnds)) 
     bin_count = np.zeros(len(iwv_bin_bnds) - 1)
     
     profiles_sorted = {}
     for var in variables+['lon', 'lat']:
         logger.info(var)
-        filename = filenames.format(model, run, var, num_samples, start_date, end_date, '')
+        filename = filenames.format(model, run, var, num_samples, start_date, end_date, sample_days_str, '')
         filename = os.path.join(datapath, filename)
         with(Dataset(filename)) as ds:
             profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
@@ -974,19 +988,22 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
         logger.info(var)
         splitted_array[var] = {}
         if var in variables_2D: 
-            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs)
             axis=0
+            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=axis)
+            
         else:
-            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=1)
             axis=1
-
-        perc['mean'][var] = np.asarray([np.mean(a, axis=axis) for a in splitted_array[var]])
-        perc['std'][var] = np.asarray([np.std(a, axis=axis) for a in splitted_array[var]])
-        perc['min'][var] = np.asarray([np.min(a, axis=axis) for a in splitted_array[var]])
-        perc['max'][var] = np.asarray([np.max(a, axis=axis) for a in splitted_array[var]])
-        perc['median'][var] = np.asarray([np.median(a, axis=axis) for a in splitted_array[var]])
-        perc['quart25'][var] = np.asarray([np.percentile(a, 25, axis=axis) for a in splitted_array[var]])
-        perc['quart75'][var] = np.asarray([np.percentile(a, 75, axis=axis) for a in splitted_array[var]])
+            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=axis)
+            
+        for s in splitted_array[var]:
+            print(s.shape)
+        perc['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
+        perc['std'][var] = np.asarray([np.nanstd(a, axis=axis) for a in splitted_array[var]])
+        perc['min'][var] = np.asarray([np.nanmin(a, axis=axis) for a in splitted_array[var]])
+        perc['max'][var] = np.asarray([np.nanmax(a, axis=axis) for a in splitted_array[var]])
+        perc['median'][var] = np.asarray([np.nanmedian(a, axis=axis) for a in splitted_array[var]])
+        perc['quart25'][var] = np.asarray([np.nanpercentile(a, 25, axis=axis) for a in splitted_array[var]])
+        perc['quart75'][var] = np.asarray([np.nanpercentile(a, 75, axis=axis) for a in splitted_array[var]])
 
 
     # determine in-cloud ice/water content and cloud fraction in each bin
@@ -1011,20 +1028,20 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
             binned_profiles[var] = [profiles_sorted[var][:, bin_idx == bi] for bi in bins]
             axis=1
 
-        binned['mean'][var] = np.asarray([np.mean(p, axis=axis) for p in binned_profiles[var]])
-        binned['std'][var] = np.asarray([np.std(p, axis=axis) for p in binned_profiles[var]])
-        binned['median'][var] = np.asarray([np.median(p, axis=axis) for p in binned_profiles[var]])
+        binned['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
+        binned['std'][var] = np.asarray([np.nanstd(p, axis=axis) for p in binned_profiles[var]])
+        binned['median'][var] = np.asarray([np.nanmedian(p, axis=axis) for p in binned_profiles[var]])
         binned['min'][var] = np.asarray(
-            [np.min(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            [np.nanmin(p, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
         )
         binned['max'][var] = np.asarray(
-            [np.max(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            [np.nanmax(p, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
         )
         binned['quart25'][var] = np.asarray(
-            [np.percentile(p, 25, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            [np.nanpercentile(p, 25, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
         )
         binned['quart75'][var] = np.asarray(
-            [np.percentile(p, 75, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+            [np.nanpercentile(p, 75, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
         )
 
     # determine in-cloud ice/water content and cloud fraction in each bin    
@@ -1038,15 +1055,15 @@ def average_random_profiles(model, run, time_period, variables, num_samples, **k
         
     logger.info('Write output')
     #output files
-    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_{num_samples}_1exp.pkl'
-    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}_1exp.pkl'
+    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_{num_samples}{sample_days_str}_1exp.pkl'
+    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}{sample_days_str}_1exp.pkl'
     
     with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
         pickle.dump(perc, outfile) 
     with open(os.path.join(datapath, outname_binned), 'wb' ) as outfile:
         pickle.dump(binned, outfile)
 
-def average_random_profiles_per_basin(model, run, time_period, variables, num_samples, **kwargs):
+def average_random_profiles_per_basin(model, run, time_period, variables, num_samples, sample_days, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
     ocean basins. Output is saved as .pkl files.
     
@@ -1057,6 +1074,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
             in the format YYYY-mm-dd 
         variables (list of str): names of variables
         num_samples (num): number of randomly selected profiles
+        sample_days (str): 'all', 'first10' or 'last10'
     """
 
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
@@ -1065,7 +1083,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
     datapath = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/random_samples/'
-    filenames = '{}-{}_{}_sample_{}_{}-{}{}.nc'
+    filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
     perc_values = np.arange(1, 100.5, 1.0)
     num_percs = len(perc_values)
     iwv_bin_bnds = np.arange(0, 101, 1)
@@ -1073,11 +1091,15 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
         'QI': 0.001 * 1e-6,
         'QC': 0.001 * 1e-6
     }
+    if sample_days == 'all':
+        sample_days_str = ''
+    else:
+        sample_days_str = '_'+sample_days
     ocean_basins = ['Pacific', 'Atlantic', 'Indic']
     stats = ['mean', 'std', 'median', 'min', 'max', 'quart25', 'quart75']
     
     logger.info('Read data from files')
-    filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, '')
+    filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, sample_days_str, '')
     filename = os.path.join(datapath, filename)
     with(Dataset(filename)) as ds:
         height = ds.variables['height'][:].filled(np.nan)
@@ -1089,7 +1111,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     profiles_sorted = {}
     for var in variables+['lon', 'lat']:
         logger.info(var)
-        filename = filenames.format(model, run, var, num_samples, start_date, end_date, '')
+        filename = filenames.format(model, run, var, num_samples, start_date, end_date, sample_days_str, '')
         filename = os.path.join(datapath, filename)
         with(Dataset(filename)) as ds:
             profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
@@ -1152,13 +1174,13 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
                 splitted_array[var] = np.array_split(profiles[b][var], num_percs, axis=1)
                 axis=1
                 
-            perc[b]['mean'][var] = np.asarray([np.mean(a, axis=axis) for a in splitted_array[var]])
-            perc[b]['std'][var] = np.asarray([np.std(a, axis=axis) for a in splitted_array[var]])
-            perc[b]['min'][var] = np.asarray([np.min(a, axis=axis) for a in splitted_array[var]])
-            perc[b]['max'][var] = np.asarray([np.max(a, axis=axis) for a in splitted_array[var]])
-            perc[b]['median'][var] = np.asarray([np.median(a, axis=axis) for a in splitted_array[var]])
-            perc[b]['quart25'][var] = np.asarray([np.percentile(a, 25, axis=axis) for a in splitted_array[var]])
-            perc[b]['quart75'][var] = np.asarray([np.percentile(a, 75, axis=axis) for a in splitted_array[var]])
+            perc[b]['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['std'][var] = np.asarray([np.nanstd(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['min'][var] = np.asarray([np.nanmin(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['max'][var] = np.asarray([np.nanmax(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['median'][var] = np.asarray([np.nanmedian(a, axis=axis) for a in splitted_array[var]])
+            perc[b]['quart25'][var] = np.asarray([np.nanpercentile(a, 25, axis=axis) for a in splitted_array[var]])
+            perc[b]['quart75'][var] = np.asarray([np.nanpercentile(a, 75, axis=axis) for a in splitted_array[var]])
         
 
         # determine in-cloud ice/water content and cloud fraction in each bin
@@ -1185,20 +1207,20 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
                 binned_profiles[var] = [profiles[b][var][:, bin_idx == bi] for bi in bins]
                 axis=1
                 
-            binned[b]['mean'][var] = np.asarray([np.mean(p, axis=axis) for p in binned_profiles[var]])
-            binned[b]['std'][var] = np.asarray([np.std(p, axis=axis) for p in binned_profiles[var]])
-            binned[b]['median'][var] = np.asarray([np.median(p, axis=axis) for p in binned_profiles[var]])
+            binned[b]['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
+            binned[b]['std'][var] = np.asarray([np.nanstd(p, axis=axis) for p in binned_profiles[var]])
+            binned[b]['median'][var] = np.asarray([np.nanmedian(p, axis=axis) for p in binned_profiles[var]])
             binned[b]['min'][var] = np.asarray(
-                [np.min(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+                [np.nanmin(p, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
             )
             binned[b]['max'][var] = np.asarray(
-                [np.max(p, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+                [np.nanmax(p, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
             )
             binned[b]['quart25'][var] = np.asarray(
-                [np.percentile(p, 25, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+                [np.nanpercentile(p, 25, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
             )
             binned[b]['quart75'][var] = np.asarray(
-                [np.percentile(p, 75, axis=axis) if p.size else np.nan for p in binned_profiles[var]]
+                [np.nanpercentile(p, 75, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
             )
             
         # determine in-cloud ice/water content and cloud fraction in each bin    
@@ -1212,8 +1234,8 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
         
     logger.info('Write output')
     #output files
-    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_basins_{num_samples}_0exp.pkl'
-    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_basins_{num_samples}_0exp.pkl'
+    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_basins_{num_samples}{sample_days_str}_0exp.pkl'
+    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_basins_{num_samples}{sample_days_str}_0exp.pkl'
     
     with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
         pickle.dump(perc, outfile) 
@@ -1485,7 +1507,7 @@ def get_path2weights(model, run, grid_res, **kwargs):
             weights = 'ICON_R2B09_0.10_grid_wghts.nc'
         elif run == '5.0km_2':
             weights = 'ICON_R2B09-mpi_0.10_grid_wghts.nc'
-        elif run == '2.5km':
+        elif run == '2.5km' or run == '2.5km_winter':
             weights = 'ICON_R2B10_0.10_grid_wghts.nc'
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km".')
@@ -1648,6 +1670,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                     stem   = '/work/ka1081/DYAMOND/ICON-5km_2/nwp_R2B09_lkm1013_{}'.format(suffix)
                 elif (run=='2.5km'):
                     stem   = '/work/ka1081/DYAMOND/ICON-2.5km/nwp_R2B10_lkm1007_{}'.format(suffix)
+                elif (run == '2.5km_winter'):
+                    stem = '/mnt/lustre02/work/mh1126/m300773/DYAMONDwinter/ICON-2.5km/nwp_R2B10_lkm1007_{}'.format(suffix)
                 else:
                     print (f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km".')
                     return None
@@ -2779,7 +2803,7 @@ def get_deaccumulationfilelist(models, runs, variables, time_period, data_dir, *
     
     return model_list, infile_list, variable_list
 
-def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lonlatbox, data_dir, experiment=None, day=None, **kwargs):
+def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lonlatbox, data_dir, sample_days, experiment=None, day=None, **kwargs):
     """ Returns filelist needed to perform Monte Carlo Sampling of Profiles.
     
     Parameters:
@@ -2814,6 +2838,10 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
         expstr = f'_{str(experiment)}'
     else:
         expstr = ''
+    if sample_days == 'all':
+        sample_day_str = ''
+    else:
+        sample_day_str = '_'+sample_days
     
     model_list = []
     run_list = []
@@ -2836,7 +2864,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
             infile_sublist.append(file) 
 
         for var in variables + ['IWV', 'lon', 'lat', 'timestep']:
-            outfile = f'{model}-{run}_{var}_sample_{num_samples_tot}_{start_date_out}-{end_date_out}{latlonstr}{expstr}.nc'
+            outfile = f'{model}-{run}_{var}_sample_{num_samples_tot}_{start_date_out}-{end_date_out}{sample_day_str}{latlonstr}{expstr}.nc'
             outfile = os.path.join(data_dir, model, 'random_samples', outfile)
             outfile_sublist.append(outfile)
         infile_list.append(infile_sublist)
