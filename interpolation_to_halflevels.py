@@ -35,7 +35,7 @@ ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to time step
 
 models, runs, variables, infiles = ptools.get_interpolationtohalflevels_filelist(**config)
 
-timesteps = config['timesteps']
+timesteps = config['num_timesteps']
 timestep_ID = np.mod(ID, timesteps)
 
 ptools.interpolation_to_halflevels_per_timestep(infiles[ID], models[ID], runs[ID], variables[ID], timestep_ID, **config)
