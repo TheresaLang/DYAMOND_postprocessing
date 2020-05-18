@@ -44,6 +44,8 @@ def preprocess(model, infile, tempfile, outfile, option_1, option_2, numthreads,
         preprocess_IFS(infile, tempfile, outfile, option_1, option_2, numthreads)
     elif model == 'MPAS':
         preprocess_MPAS(infile, tempfile, outfile, option_1, numthreads)
+    elif model == 'ERA5':
+        preprocess_ERA5(infile, outfile, option_1, option_2, numthreads)
         
     
 def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numthreads, **kwargs):
@@ -121,6 +123,23 @@ def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwar
     os.system(cmd_2)
     logger.info(cmd_3)
     os.system(cmd_3)
+    
+def preprocess_ERA5(infile, outfile, option_grid, option_splitday, numthreads, **kwargs):
+    """ Perform processing steps required before horizontal interpolation for the ERA5 reanalysis.
+    """
+    logger.info('Preprocessing ERA5...')
+    
+    if option_grid == 'gaussian':
+        # Change file format from GRIB2 to NetCDF4
+        # -R option: Change from Gaussian reduced to regular Gaussian grid
+        cmd = f'cdo -P {numthreads} -R -f nc4 {option_splitday} {infile} {outfile}'
+    elif option_grid == 'spectral':
+        # Some variables (e.g. temperature, vertical velocity) are given on a spectral grid,
+        # which has to be transformed to a regular Gaussian grid first.
+        cmd = f'cdo -P {numthreads} -f nc4 sp2gp,linear {infile} {outfile}' 
+     
+    logger.info(cmd)
+    os.system(cmd)
     
 def preprocess_ARPEGE_1(preprocess_dir, infile_2D, infile_3D, outfileprefix, merge_list_3D, tempfile_list_3D,\
                         filelist_2D, tempfile_list_2D, variables, **kwargs):
@@ -581,10 +600,9 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
         elif model == 'FV3':
             z0 = ds.variables['z'][:].filled(np.nan)
         elif model == 'ARPEGE':
-            z0 = np.ones((len(lat), len(lon))) * 17. # lowest model level is at 17 meters above sea level
-            #ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g
+            z0 = ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g 
+            # z0 = np.ones((len(lat), len(lon))) * 17. (lowest model level is at 17 meters above sea level)
             
-    
     # Calculate heights
     logger.info('Calculate heights')
     height = np.flipud(pressure2height(np.flipud(pres), np.flipud(temp), z0))
@@ -2227,7 +2245,69 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         option_2_list.append(option_2)
                         models_list.append('IFS')
 
+        elif model == 'ERA5':
+            stem = '/work/bk1099/data/'
+            vars_2D = ['SURF_PRES']
+            var2varid = {
+                'TEMP': 130,
+                'SURF_PRES': 134,
+                'QV': 133,
+                'QI': 247,
+                'QC': 246,
+                'OMEGA': 135,
+                'OLR': 235040,
+                'STOA': 235035
+            }
+            
+            for var in variables:
+                # option 1: variable given on spectral or Gaussian reduced grid
+                if var in ['TEMP', 'OMEGA']:
+                    option_1 = 'spectral'
+                else:
+                    option_1 = 'gaussian'
 
+                # 2D variables: One file per month
+                if var in vars_2D:
+                    directory = 'sf00_1H'
+                    option_2 = 'splitday'
+                    
+                    for i in np.arange(time.size):
+                        if i == 0 or (i > 0 and time[i].month != time[i-1].month):
+                            month_str = time[i].strftime("%m") 
+                            filename = f'E5sf00_1H_{time[i].year}-{month_str}_{var2varid[var]}'
+                            in_file = os.path.join(stem, directory, str(time[i].year), filename)
+                            out_file = f'{model}-{run}_{var}_{month_str}'
+                            out_file = os.path.join(temp_dir, out_file)
+                            temp_file = ''
+                            
+                            infile_list.append(in_file)
+                            tempfile_list.append(temp_file)
+                            outfile_list.append(out_file)
+                            option_1_list.append(option_1)
+                            option_2_list.append(option_2)
+                            models_list.append('ERA5')                            
+                        
+                # 3D variables: One file per day
+                else:
+                    directory = 'ml00_1H'
+                    option_2 = 'copy'
+                
+                    for i in np.arange(time.size):
+                        date_str = time[i].strftime("%m-%d")
+                        filename = f'E5ml00_1H_{time[i].year}-{date_str}_{var2varid[var]}'
+                        in_file = os.path.join(stem, directory, str(time[i].year), filename)
+                        date_str = time[i].strftime("%m%d")
+                        out_file = f'{model}-{run}_{var}_{date_str}.nc'
+                        out_file = os.path.join(temp_dir, out_file)
+                        temp_file = ''
+
+                        infile_list.append(in_file)
+                        tempfile_list.append(temp_file)
+                        outfile_list.append(out_file)
+                        option_1_list.append(option_1)
+                        option_2_list.append(option_2)
+                        models_list.append('ERA5')
+                                
         elif model == 'MPAS':
             stem = '/work/ka1081/DYAMOND/MPAS-3.75km'
             var2filename = {
