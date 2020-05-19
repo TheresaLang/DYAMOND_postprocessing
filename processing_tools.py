@@ -132,7 +132,7 @@ def preprocess_ERA5(infile, outfile, option_grid, option_splitday, numthreads, *
     if option_grid == 'gaussian':
         # Change file format from GRIB2 to NetCDF4
         # -R option: Change from Gaussian reduced to regular Gaussian grid
-        cmd = f'cdo -P {numthreads} -R -f nc4 {option_splitday} {infile} {outfile}'
+        cmd = f'cdo -P {numthreads} -f nc4 setgridtype,regular -{option_splitday} {infile} {outfile}'
     elif option_grid == 'spectral':
         # Some variables (e.g. temperature, vertical velocity) are given on a spectral grid,
         # which has to be transformed to a regular Gaussian grid first.
@@ -356,7 +356,6 @@ def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile
     rho = typhon.physics.density(pres, virt_temp)
     # vertical velocity
     w = -omega / rho / g
-    return omega, w, rho, virt_temp, temp
     
     # save to file
     logger.info('Save omega to file')
@@ -527,6 +526,8 @@ def calc_level_pressure_from_surface_pressure(surf_pres_file, timestep, model, r
         for lo in range(surf_pres.shape[2]):
             if model == 'IFS':
                 pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
+            if model == 'ERA5':
+                pres[:, la, lo] = np.flipud(surf_pres[:, la, lo] * b + a)
             else:
                 pres[:, la, lo] = surf_pres[:, la, lo] * b + a
             #return(a[ilev-1]+b[ilev-1]*surfacepressure)
@@ -576,7 +577,7 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
         lon = ds.variables['lon'][:].filled(np.nan)
         
     with Dataset(pres_file) as ds:
-        # IFS: logarithm of surface pressure is gien
+        # IFS: logarithm of surface pressure is given
         if model == 'IFS':
             surf_pres = np.exp(ds.variables[pres_name][timestep].filled(np.nan))
         # SAM: mean pressure and pressure perturbation are given
@@ -595,7 +596,7 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
             
     # orography
     with Dataset(z0_file) as ds:
-        if model == 'IFS':
+        if model in ['IFS', 'ERA5']:
             z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
         elif model == 'FV3':
             z0 = ds.variables['z'][:].filled(np.nan)
@@ -1610,11 +1611,11 @@ def get_path2heightfile(model, grid_res=0.1, **kwargs):
     gridname = str(grid_res).ljust(4, '0')
     return f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/{model}-{gridname}deg_heights.nc'
 
-def get_path2targetheightfile(model, **kwargs):
+def get_path2targetheightfile(model, data_dir, **kwargs):
     """
     """
 
-    targetheightfile = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/target_height.nc'
+    targetheightfile = f'{data_dir}/{model}/target_height.nc'
     
     return targetheightfile
 
@@ -1623,6 +1624,8 @@ def get_path2z0file(model, run, **kwargs):
     """
     if model == 'FV3':
         path2z0file = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/{model}-{run}_OROG_sea_estimated_trop.nc'
+    elif model == 'ERA5':
+        path2z0file = f'/mnt/lustre02/work/mh1126/m300773/{model}/{model}-{run}_OROG_trop.nc'
     else:
         path2z0file = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/{model}-{run}_OROG_trop.nc'
     
@@ -2124,13 +2127,13 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
             var2variablename = {
                 'TEMP': 'T',
                 'QV': 'QV',
-                'SURF_PRES': 'lnsp',
+                'SURF_PRES': 'var134',
                 'QI': 'param84.1.0', 
                 'QC': 'param83.1.0',
-                'OMEGA': 'param120.128.192'
+                'OMEGA': 'OMEGA'
             }
             for var in variables:
-                option = f'-chname,{var2variablename[var]},{var}'
+                option = f'-seltimestep,1/24/3 -chname,{var2variablename[var]},{var}'
                 for i in np.arange(time.size):
                     date_str = time[i].strftime("%m%d")
                     day_file = f'{model}-{run}_{var}_{date_str}.nc'
@@ -2503,7 +2506,11 @@ def get_mergingfilelist(models, runs, variables, time_period, vinterp, temp_dir,
                 outfile_name = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date}-{end_date}.nc'
             else:
                 outfile_name = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
-            outfile_name = os.path.join(data_dir, model, outfile_name)
+            
+            if model == 'ERA5':
+                outfile_name = os.path.join(data_dir, outfile_name)
+            else:
+                outfile_name = os.path.join(data_dir, model, outfile_name)
             outfile_list.append(outfile_name)
 
             if model == 'FV3' and not vinterp and var not in ['RH', 'H']:
@@ -2658,7 +2665,7 @@ def get_vinterpolation_per_timestep_filelist(models, runs, variables, time_perio
     for model, run in zip(models, runs):
         heightfile = f'{model}-{run}_H_hinterp_merged_{start_date}-{end_date}.nc'
         heightfile = os.path.join(data_dir, model, heightfile)
-        targetheightfile = get_path2targetheightfile(model)
+        targetheightfile = get_path2targetheightfile(model, data_dir)
 
         for var in variables:
             infile = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
@@ -2982,9 +2989,16 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
 def get_pressure_scaling_parameters(model):
     """
     """
-    if model == 'IFS':
-        a = np.array([0,0,3.757813,22.835938,62.78125,122.101563,202.484375,302.476563,424.414063,568.0625,734.992188,926.507813,1143.25,1387.546875,1659.476563,1961.5,2294.242188,2659.140625,3057.265625,3489.234375,3955.960938,4457.375,4993.796875,5564.382813,6168.53125,6804.421875,7470.34375,8163.375,8880.453125,9617.515625,10370.17578,11133.30469,11901.33984,12668.25781,13427.76953,14173.32422,14898.45313,15596.69531,16262.04688,16888.6875,17471.83984,18006.92578,18489.70703,18917.46094,19290.22656,19608.57227,19874.02539,20087.08594,20249.51172,20361.81641,20425.71875,20442.07813,20412.30859,20337.86328,20219.66406,20059.93164,19859.39063,19620.04297,19343.51172,19031.28906,18685.71875,18308.43359,17901.62109,17467.61328,17008.78906,16527.32227,16026.11523,15508.25684,14975.61523,14432.13965,13881.33106,13324.66895,12766.87305,12211.54785,11660.06738,11116.66211,10584.63184,10065.97852,9562.682617,9076.400391,8608.525391,8159.354004,7727.412109,7311.869141,6911.870605,6526.946777,6156.074219,5798.344727,5452.990723,5119.89502,4799.149414,4490.817383,4194.930664,3911.490479,3640.468262,3381.743652,3135.119385,2900.391357,2677.348145,2465.770508,2265.431641,2076.095947,1897.519287,1729.448975,1571.622925,1423.770142,1285.610352,1156.853638,1037.201172,926.34491,823.967834,729.744141,643.339905])
-        b = np.array([1,0.99763,0.995003,0.991984,0.9885,0.984542,0.980072,0.975078,0.969513,0.963352,0.95655,0.949064,0.94086,0.931881,0.922096,0.911448,0.8999,0.887408,0.873929,0.859432,0.843881,0.827256,0.809536,0.790717,0.770798,0.749797,0.727739,0.704669,0.680643,0.655736,0.630036,0.603648,0.576692,0.549301,0.521619,0.4938,0.466003,0.438391,0.411125,0.384363,0.358254,0.332939,0.308598,0.285354,0.263242,0.242244,0.222333,0.203491,0.185689,0.16891,0.153125,0.138313,0.124448,0.111505,0.099462,0.088286,0.077958,0.068448,0.059728,0.051773,0.044548,0.038026,0.032176,0.026964,0.022355,0.018318,0.014816,0.011806,0.009261,0.007133,0.005378,0.003971,0.002857,0.001992,0.001353,0.00089,0.000562,0.00034,0.000199,0.000112,0.000059,0.000024,0.000007,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+    if model in ['IFS', 'ERA5']:
+        
+        a = np.array([0, 0, 3.757813, 22.83594, 62.78125, 122.1016, 202.4844, 302.4766, 424.4141, 568.0625, 734.9922, 926.5078, 1143.25, 1387.547, 1659.477, 1961.5, 2294.242, 2659.141, 3057.266, 3489.234, 3955.961, 4457.375, 4993.797, 5564.383, 6168.531, 6804.422, 7470.344, 8163.375, 8880.453, 9617.516, 10370.18, 11133.3, 11901.34, 12668.26, 13427.77, 14173.32, 14898.45, 15596.7, 16262.05, 16888.69, 17471.84, 18006.93, 18489.71, 18917.46, 19290.23, 19608.57, 19874.03, 20087.09, 20249.51, 20361.82, 20425.72, 20442.08, 20412.31, 20337.86, 20219.66, 20059.93, 19859.39, 19620.04, 19343.51, 19031.29, 18685.72, 18308.43, 17901.62, 17467.61, 17008.79, 16527.32, 16026.12, 15508.26, 14975.62, 14432.14, 13881.33, 13324.67, 12766.87, 12211.55, 11660.07, 11116.66, 10584.63, 10065.98, 9562.683, 9076.4, 8608.525, 8159.354, 7727.412, 7311.869, 6911.871, 6526.947, 6156.074, 5798.345, 5452.991, 5119.895, 4799.149, 4490.817, 4194.931, 3911.49, 3640.468, 3381.744, 3135.119, 2900.391, 2677.348, 2465.771, 2265.432, 2076.096, 1897.519, 1729.449, 1571.623, 1423.77, 1285.61, 1156.854, 1037.201, 926.3449, 823.9678, 729.7441, 643.3399, 564.4135, 492.616, 427.5925, 368.9824, 316.4207, 269.5396, 227.9689, 191.3386, 159.2794, 131.4255, 107.4157, 86.89588, 69.52058, 54.95546, 42.87924, 32.98571, 24.98572, 18.60893, 13.60542, 9.746966, 6.827977, 4.666084, 3.102241, 2.000365])
+        
+        b = np.array([1, 0.99763, 0.995003, 0.991984, 0.9885, 0.984542, 0.980072, 0.975078, 0.969513, 0.963352, 0.95655, 0.949064, 0.94086, 0.931881, 0.922096, 0.911448, 0.8999, 0.887408, 0.873929, 0.859432, 0.843881, 0.827256, 0.809536, 0.790717, 0.770798, 0.749797, 0.727739, 0.704669, 0.680643, 0.655736, 0.630036, 0.603648, 0.576692, 0.549301, 0.521619, 0.4938, 0.466003, 0.438391, 0.411125, 0.384363, 0.358254, 0.332939, 0.308598, 0.285354, 0.263242, 0.242244, 0.222333, 0.203491, 0.185689, 0.16891, 0.153125, 0.138313, 0.124448, 0.111505, 0.099462, 0.088286, 0.077958, 0.068448, 0.059728, 0.051773, 0.044548, 0.038026, 0.032176, 0.026964, 0.022355, 0.018318, 0.014816, 0.011806, 0.009261, 0.007133, 0.005378, 0.003971, 0.002857, 0.001992, 0.001353, 0.00089, 0.000562, 0.00034, 0.000199, 0.000112, 0.000059, 0.000024, 0.000007, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        if model == 'IFS':
+            return a[0:113], b[0:113]
+        elif model == 'ERA5':
+            return a, b
+        
     elif model == 'ARPEGE':
         a = np.array([1222.8013005419998, 1151.081140022, 1047.558699711, 916.5939116075, 770.0440539174999, 622.9077824315, 486.6332968815, 368.10595326199996, 270.203518668, 192.8273379845, 133.998038074, 90.79660478299999, 60.0589440985, 38.817746126, 24.5329218185, 15.1694680875, 9.1799852255, 5.437809149, 3.152733994, 1.7886128665, 0.9924604774999999, 0.5382769345, 0.2851399245, 0.147395167, 0.07427774100000001, 0.036453698, 0.0174054565, 0.008077108, 0.0036395365000000002, 0.001591072, 0.000674332, 0.00027691500000000003, 0.0001101345, 4.24125e-05, 1.5813e-05, 5.7085e-06, 1.996e-06, 6.760000000000001e-07, 2.22e-07, 7.05e-08, 2.15e-08, 6.5e-09, 2e-09, 5e-10, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]) #surface pressure?
         b = np.array([0.033519443, 0.043141488500000005, 0.0538864905, 0.065179446, 0.07655079000000001, 0.087755708, 0.098617487, 0.109037617, 0.11898940250000001, 0.1285059975, 0.1376670545, 0.1465862685, 0.15540085, 0.1642631035, 0.173333806, 0.1827769155, 0.19275514300000002, 0.2034260255, 0.2149382755, 0.2274282975, 0.241016859, 0.2558059515, 0.271875918, 0.289282932, 0.3080569055, 0.3281999095, 0.34968516949999995, 0.3724566975, 0.39642960250000003, 0.4214911215, 0.447502403, 0.47430106299999997, 0.501704532, 0.529514206, 0.5575204085000001, 0.585508159, 0.6132637475, 0.6405821055, 0.6672749535, 0.6931797075, 0.7181691185000001, 0.7421616105, 0.7651322825, 0.787124532, 0.808262252, 0.828762547, 0.848636437, 0.8675177970000001, 0.8851629525, 0.9015718930000001, 0.916744609, 0.9306810925, 0.9433813345, 0.9548453275, 0.9650730654999999, 0.974064542, 0.981819751, 0.988338689, 0.9936213524999999, 0.9979768075]) #surface pressure?
