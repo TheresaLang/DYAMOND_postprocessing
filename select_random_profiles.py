@@ -31,6 +31,6 @@ ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
 num_samples = config['num_samples']
 models, runs, infiles, outfiles = ptools.get_samplefilelist(num_samples, **config)
 heightfile = join(config['data_dir'], models[ID], 'target_height.nc')
-landmaskfile = join(config['data_dir'], 'ICON', 'land_mask.nc')
+landmaskfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/land_mask.nc'
 
 ptools.select_random_profiles(models[ID], runs[ID], num_samples, infiles[ID], outfiles[ID], heightfile, landmaskfile, **config)
