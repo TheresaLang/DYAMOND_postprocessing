@@ -31,9 +31,9 @@ from netCDF4 import Dataset
 config = ptools.config()
 
 # paths to files containing temperature, pressure and specific humidity
-models, runs, omega_files, temp_files, qv_files, pres_files = ptools.get_wcalculation_filelist(**config)
+models, runs, omega_files, temp_files, qv_files, pres_files, height_files = ptools.get_wcalculation_filelist(**config)
 timesteps = config['num_timesteps']
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0))
 timestep_ID = np.mod(ID, timesteps) # ID corresponds to timestep
 
-ptools.calc_vertical_velocity(omega_files[ID], temp_files[ID], qv_files[ID], pres_files[ID], timestep_ID, models[ID], runs[ID], **config)
+ptools.calc_vertical_velocity(omega_files[ID], temp_files[ID], qv_files[ID], pres_files[ID], height_files[ID], timestep_ID, models[ID], runs[ID], **config)
