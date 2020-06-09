@@ -132,7 +132,7 @@ def preprocess_ERA5(infile, outfile, option_grid, option_splitday, numthreads, *
     if option_grid == 'gaussian':
         # Change file format from GRIB2 to NetCDF4
         # -R option: Change from Gaussian reduced to regular Gaussian grid
-        cmd = f'cdo -P {numthreads} -f nc4 setgridtype,regular -{option_splitday} {infile} {outfile}'
+        cmd = f'cdo -P {numthreads} -f nc4 -{option_splitday} -setgridtype,regular {infile} {outfile}'
     elif option_grid == 'spectral':
         # Some variables (e.g. temperature, vertical velocity) are given on a spectral grid,
         # which has to be transformed to a regular Gaussian grid first.
@@ -920,7 +920,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             )
     
     
-def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, **kwargs):
+def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
     ocean basins. Output is saved as .pkl files.
     
@@ -939,7 +939,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     end_date = time[-1].strftime("%m%d")
     variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
-    datapath = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/random_samples/'
+    datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
     perc_values = np.arange(1, 100.5, 1.0)
     num_percs = len(perc_values)
@@ -1074,7 +1074,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
         
     logger.info('Write output')
     #output files
-    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_{num_samples}{sample_days_str}_1exp.pkl'
+    outname_perc = f'{model}-{run}_{start_date}-{end_date}_{num_percs}_perc_means_{num_samples}{sample_days_str}_1exp.pkl'
     outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}{sample_days_str}_1exp.pkl'
     
     with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
@@ -1082,7 +1082,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     with open(os.path.join(datapath, outname_binned), 'wb' ) as outfile:
         pickle.dump(binned, outfile)
 
-def average_random_profiles_per_basin(model, run, time_period, variables, num_samples, sample_days, **kwargs):
+def average_random_profiles_per_basin(model, run, time_period, variables, num_samples, sample_days, data_dir, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
     ocean basins. Output is saved as .pkl files.
     
@@ -1101,7 +1101,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     end_date = time[-1].strftime("%m%d")
     variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
-    datapath = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/random_samples/'
+    datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
     perc_values = np.arange(1, 100.5, 1.0)
     num_percs = len(perc_values)
@@ -1322,6 +1322,7 @@ def get_modelspecific_varnames(model):
             'W': 'W',#'wz', 
             'WHL': 'W',
             'STOA': 'ASOB_T',
+            'PREC': 'TOT_PREC',
             'OLRC': '-',
             'STOAC': '-',
             'OMEGA': '-'
@@ -1490,7 +1491,8 @@ def get_variable_units():
         'STOAC': 'W m**-2',
         'SUTOA': 'W m**-2',
         'SDTOA': 'W m**-2',
-        'OLRC': 'W m**-2'
+        'OLRC': 'W m**-2',
+        'PREC': 'kg s**-1 m**-2'
     }
     
     return varunit        
@@ -1588,7 +1590,7 @@ def get_path2weights(model, run, grid_res, **kwargs):
             logger.error(f'Run {run} not supported for {model}.\nSupported run is: "2.5km".')
     
     elif model == 'ERA5':
-        grid_dir = '/mnt/lustre02/work/mh1126/m300773/ERA5'
+        grid_dir = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ERA5'
         weights = 'ERA5-31.0km_0.10_grid_wghts.nc'
     # other models...
     else:
@@ -1624,8 +1626,6 @@ def get_path2z0file(model, run, **kwargs):
     """
     if model == 'FV3':
         path2z0file = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/{model}-{run}_OROG_sea_estimated_trop.nc'
-    elif model == 'ERA5':
-        path2z0file = f'/mnt/lustre02/work/mh1126/m300773/{model}/{model}-{run}_OROG_trop.nc'
     else:
         path2z0file = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/{model}/{model}-{run}_OROG_trop.nc'
     
@@ -1680,6 +1680,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'W500': 'atm_omega_3d_pl_',
                 'W': 'atm_3d_w_ml_',
                 'STOA': 'atm_2d_avg_ml_',
+                'PREC': 'atm2_2d_ml_',
                 'OLRC': '-',
                 'STOAC': '-',
                 'OMEGA': '-'
@@ -2173,18 +2174,20 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
     option_2_list = []
     
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
-    # Filenames of IFS raw files contain a number corresponding to the hours since the 
-    # start of the simulation (2016-08-01 00:00:00)
-    # define reference time vector starting at 2016-08-01 00:00:00
-    ref_time = pd.date_range('2016-08-01 00:00:00', '2018-09-10 00:00:00', freq='3h')
-    # find the index where the reference time equals the specified start time and 
-    # multiply by 3 (because the output is 3-hourly) to get the filename-number of the
-    # first relevant file
-    hour_start = np.where(ref_time == time[0])[0][0] * 3
+
+
     
     for model, run in zip(models, runs):
     
         if model == 'IFS':
+            # Filenames of IFS raw files contain a number corresponding to the hours since the 
+            # start of the simulation (2016-08-01 00:00:00)
+            # define reference time vector starting at 2016-08-01 00:00:00
+            ref_time = pd.date_range('2016-08-01 00:00:00', '2018-09-10 00:00:00', freq='3h')
+            # find the index where the reference time equals the specified start time and 
+            # multiply by 3 (because the output is 3-hourly) to get the filename-number of the
+            # first relevant file
+            hour_start = np.where(ref_time == time[0])[0][0] * 3
             var2filename = {
                 'TEMP': 'gg_mars_out_ml_upper_sh',
                 'QV': 'mars_out_ml_moist',
@@ -2502,7 +2505,7 @@ def get_mergingfilelist(models, runs, variables, time_period, vinterp, temp_dir,
         print(model)
         for var in variables:
             infile_list.append([])
-            if vinterp == 1 and model in ['GEOS', 'IFS', 'FV3', 'ARPEGE']:
+            if vinterp == 1 and model in ['GEOS', 'IFS', 'FV3', 'ARPEGE', 'ERA5']:
                 outfile_name = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date}-{end_date}.nc'
             else:
                 outfile_name = f'{model}-{run}_{var}_hinterp_merged_{start_date}-{end_date}.nc'
@@ -2542,7 +2545,7 @@ def get_mergingfilelist(models, runs, variables, time_period, vinterp, temp_dir,
                                         infile_list[v].append(infile_name)
 
                         else:
-                            if model in ['GEOS', 'IFS', 'FV3'] and vinterp:
+                            if model in ['GEOS', 'IFS', 'FV3', 'ERA5'] and vinterp:
                                 for h in np.arange(0, 24, 3):
                                     infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'
                                     infile_name = os.path.join(temp_dir, infile_name)
@@ -2970,7 +2973,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
         for var in variables:
             if model in ['ICON', 'MPAS'] and var == 'W':
                 var = 'WHL'
-            if model in ['IFS', 'GEOS', 'FV3', 'ARPEGE'] and var not in variables_2D:
+            if model in ['IFS', 'GEOS', 'FV3', 'ARPEGE', 'ERA5'] and var not in variables_2D:
                 file = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date_in}-{end_date_in}.nc'
             else: 
                 file = f'{model}-{run}_{var}_hinterp_merged_{start_date_in}-{end_date_in}.nc'
