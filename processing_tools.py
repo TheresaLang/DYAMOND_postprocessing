@@ -937,11 +937,12 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
+    extra_variables = ['A_QV', 'A_RH', 'DRH_Dt']
     datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
-    perc_values = np.arange(1, 100.5, 1.0)
+    perc_values = np.arange(2., 100.5, 2.0)
     num_percs = len(perc_values)
     iwv_bin_bnds = np.arange(0, 101, 1)
     ic_thres = {
@@ -973,25 +974,46 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
     num_profiles = len(profiles_sorted[var])
             
-    logger.info('Calc additional variables: IWP and H_tropo')
-  
-    profiles_sorted['IWP'] = np.ones(num_profiles) * np.nan
+    logger.info('Calc additional variables: IWP, H_tropo and T_QV')
+    # RH tendency 
+    if 'DRH_Dt' in extra_variables:
+        profiles_sorted['DRH_Dt'] = utils.drh_dt(
+            profiles_sorted['TEMP'], 
+            profiles_sorted['PRES'], 
+            profiles_sorted['QV'],
+            profiles_sorted['W'],
+            height   
+        )
+    # RH advection
+    if 'A_RH' in extra_variables:
+        profiles_sorted['A_RH'] = -profiles_sorted['W'] * np.gradient(profiles_sorted['RH'], height, axis=0)
 
-    profiles_sorted['IWP'] = utils.calc_IWP(
-        profiles_sorted['QI'], 
-        profiles_sorted['TEMP'], 
-        profiles_sorted['PRES'], 
-        profiles_sorted['QV'], 
-        height
-    )    
-    profiles_sorted['H_tropo'] = utils.tropopause_height(
-        profiles_sorted['TEMP'], 
-        height
-    )
-            
+    # spec. hum. advection
+    if 'A_QV' in extra_variables:
+        profiles_sorted['A_QV'] = -profiles_sorted['W'] * np.gradient(profiles_sorted['QV'], height, axis=0)
+    
+    if 'IWP' in extra_variables:
+        profiles_sorted['IWP'] = utils.calc_IWP(
+            profiles_sorted['QI'], 
+            profiles_sorted['TEMP'], 
+            profiles_sorted['PRES'], 
+            profiles_sorted['QV'], 
+            height
+        )
+        outname = filenames.format(model, run, 'IWP', num_samples, start_date, end_date, sample_days_str, '')
+        vector_to_netCDF(
+            profiles_sorted['IWP'], 'IWP', '', range(num_samples), 'profile_index', outname, overwrite=True
+        )
+        
+    if 'H_tropo' in extra_variables:    
+        profiles_sorted['H_tropo'] = utils.tropopause_height(
+            profiles_sorted['TEMP'], 
+            height
+        )
+           
     nan_mask = np.isnan(profiles_sorted['lon'])
     
-    for var in variables+['lon', 'lat', 'IWP', 'H_tropo']:
+    for var in variables+['lon', 'lat']+extra_variables:
         if var in variables_3D:
             profiles_sorted[var] = profiles_sorted[var][:, np.logical_not(nan_mask)]
         else:
@@ -1003,7 +1025,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     logger.info('Binning to percentile bins')
     perc['percentiles'] = np.asarray([np.percentile(profiles_sorted['IWV'], p) for p in perc_values])
     splitted_array = {}
-    for var in variables+['H_tropo', 'IWP']:
+    for var in variables+extra_variables:
         logger.info(var)
         splitted_array[var] = {}
         if var in variables_2D: 
@@ -1038,9 +1060,9 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     bin_idx = np.digitize(profiles_sorted['IWV'], iwv_bin_bnds)
     binned['count'] = np.asarray([len(np.where(bin_idx == bi)[0]) for bi in bins])
     binned_profiles = {}
-    for var in variables+['H_tropo', 'IWP']:
+    for var in variables+extra_variables:
         logger.info(var)
-        if var in variables_2D+['IWP', 'H_tropo']:
+        if var in variables_2D:
             binned_profiles[var] = [profiles_sorted[var][bin_idx == bi] for bi in bins]
             axis=0
         else:
@@ -1099,11 +1121,11 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W']
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'T_QV']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
     datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
-    perc_values = np.arange(1, 100.5, 1.0)
+    perc_values = np.arange(2, 100.5, 2.0)
     num_percs = len(perc_values)
     iwv_bin_bnds = np.arange(0, 101, 1)
     ic_thres = {
@@ -1136,7 +1158,9 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
             profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
     num_profiles = len(profiles_sorted[var])
             
-    logger.info('Calc additional variables: IWP and H_tropo')
+    logger.info('Calc additional variables: T_QV, IWP and H_tropo')
+    profiles_sorted['T_QV'] = -profiles_sorted['W'] * np.gradient(profiles_sorted['QV'], height, axis=0)
+    
     profiles_sorted['IWP'] = np.ones(num_profiles) * np.nan
     profiles_sorted['IWP'] = utils.calc_IWP(
         profiles_sorted['QI'], 
@@ -1151,7 +1175,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     )
             
     nan_mask = np.isnan(profiles_sorted['lon'])
-    for var in variables+['lon', 'lat', 'IWP', 'H_tropo']:
+    for var in variables+['lon', 'lat', 'IWP', 'H_tropo', 'T_QV']:
         if var in variables_3D:
             profiles_sorted[var] = profiles_sorted[var][:, np.logical_not(nan_mask)]
         else:
@@ -1169,7 +1193,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     for basin in ocean_basins:
         logger.info(basin)
         profiles[basin] = {}
-        for var in variables+['lon', 'lat', 'IWP', 'H_tropo']:
+        for var in variables+['lon', 'lat', 'IWP', 'H_tropo', 'T_QV']:
             if var in variables_3D:
                 profiles[basin][var] = profiles_sorted[var][:, basins == basin]
             else:
@@ -1183,7 +1207,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
         perc[b] = {s: {} for s in stats+['percentiles']}
         perc[b]['percentiles'] = np.asarray([np.percentile(profiles[b]['IWV'], p) for p in perc_values])
         splitted_array = {}
-        for var in variables+['H_tropo', 'IWP']:
+        for var in variables+['H_tropo', 'IWP', 'T_QV']:
             logger.info(var)
             splitted_array[var] = {}
             if var in variables_2D: 
@@ -1217,7 +1241,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
         binned[b] = {s: {} for s in stats+['count']}
         binned[b]['count'] = np.asarray([len(np.where(bin_idx == bi)[0]) for bi in bins])
         binned_profiles = {}
-        for var in variables+['H_tropo', 'IWP']:
+        for var in variables+['H_tropo', 'IWP', 'T_QV']:
             logger.info(var)
             if var in variables_2D+['IWP', 'H_tropo']:
                 binned_profiles[var] = [profiles[b][var][bin_idx == bi] for bi in bins]
@@ -1253,7 +1277,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
         
     logger.info('Write output')
     #output files
-    outname_perc = f'{model}-{run}_{start_date}-{end_date}_perc_means_basins_{num_samples}{sample_days_str}_0exp.pkl'
+    outname_perc = f'{model}-{run}_{start_date}-{end_date}_{num_percs}_perc_means_basins_{num_samples}{sample_days_str}_0exp.pkl'
     outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_basins_{num_samples}{sample_days_str}_0exp.pkl'
     
     with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
