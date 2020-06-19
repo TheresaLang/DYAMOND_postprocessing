@@ -977,10 +977,12 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     logger.info('Calc additional variables: IWP, H_tropo and T_QV')
     # RH tendency 
     if 'DRH_Dt' in extra_variables:
+        logger.info('DRH_Dt')
         profiles_sorted['DRH_Dt'] = utils.drh_dt(
             profiles_sorted['TEMP'], 
             profiles_sorted['PRES'], 
             profiles_sorted['QV'],
+            profiles_sorted['RH'],
             profiles_sorted['W'],
             height   
         )
