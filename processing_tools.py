@@ -852,11 +852,11 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     # save indices
     nctools.array2D_to_netCDF(
         lat_inds, 'idx', '', (range(num_timesteps), range(num_samples_timestep)),
-        ('timestep', 'profile_index'), outnames[-1], overwrite=True
+        ('timestep', 'profile_index'), outfiles[-1], overwrite=True
             )
     nctools.array2D_to_netCDF(
         lon_inds, 'idx', '', (range(num_timesteps), range(num_samples_timestep)),
-        ('timestep', 'profile_index'), outnames[-2], overwrite=True
+        ('timestep', 'profile_index'), outfiles[-2], overwrite=True
             )
     
     profiles = {}
