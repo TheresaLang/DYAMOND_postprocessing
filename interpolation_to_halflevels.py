@@ -26,6 +26,7 @@ from os.path import join
 import processing_tools as ptools
 import analysis_tools as atools
 from netCDF4 import Dataset
+import filelists
 reload(ptools)
 
 # load configuration
@@ -33,7 +34,7 @@ config = ptools.config()
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to time step
 
-models, runs, variables, infiles = ptools.get_interpolationtohalflevels_filelist(**config)
+models, runs, variables, infiles = filelists.get_interpolationtohalflevels_filelist(**config)
 
 timesteps = config['num_timesteps']
 timestep_ID = np.mod(ID, timesteps)

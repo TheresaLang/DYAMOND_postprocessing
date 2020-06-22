@@ -24,13 +24,13 @@ from os.path import join
 import processing_tools as ptools
 import analysis_tools as atools
 from netCDF4 import Dataset
-reload(ptools)
+import filelists
 
 # load configuration
 config = ptools.config()
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to time step
 
-models, infiles, variables = ptools.get_deaccumulationfilelist(**config)
+models, infiles, variables = filelists.get_deaccumulationfilelist(**config)
 
 ptools.deaccumulate_fields(models[ID], infiles[ID], variables[ID])

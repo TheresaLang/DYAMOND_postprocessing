@@ -25,13 +25,14 @@ import typhon
 import analysis_tools as atools
 import processing_tools as ptools
 from netCDF4 import Dataset
+import filelists
 
 # import config
 config = ptools.config()
 
 # paths to files containing pressure and temperature (for all timesteps) and topography
 #pres_file, temp_file, out_files = ptools.get_height_calculation_filelist(**config)
-models, runs, pres_files, temp_files, z0_files = ptools.get_height_calculation_filelist(**config)
+models, runs, pres_files, temp_files, z0_files = filelists.get_height_calculation_filelist(**config)
 #z0_file = ptools.get_path2z0file(**config)
 
 timesteps = config['num_timesteps']

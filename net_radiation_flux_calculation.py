@@ -19,12 +19,13 @@ import os
 import numpy as np
 from os.path import join
 import processing_tools as ptools
+import filelists
 
 # load configuration
 config = ptools.config()
 fluxes = ['SDTOA', 'SUTOA', 'STOA']
 # get list of input and output files and options for horizontal interpolation
-infiles, tempfiles, outfiles = ptools.get_netfluxcalculationfilelist(fluxes, **config)
+infiles, tempfiles, outfiles = filelists.get_netfluxcalculationfilelist(fluxes, **config)
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to infile
 

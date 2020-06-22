@@ -22,6 +22,7 @@ from importlib import reload
 from os.path import join
 import processing_tools as ptools
 import analysis_tools as atools
+import filelists
 
 ptools = reload(ptools)
 atools = reload(atools)
@@ -32,7 +33,7 @@ ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to day
 num_samples = config['num_samples']
 num_timesteps = config['num_timesteps']
 time_period = config['time_period']
-models, runs, infiles, outfiles = ptools.get_samplefilelist(num_samples, day=ID, **config)
+models, runs, infiles, outfiles = filelists.get_samplefilelist(num_samples, day=ID, **config)
 
 model = models[0]
 run = runs[0]

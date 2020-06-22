@@ -22,13 +22,14 @@ import os
 import numpy as np
 from os.path import join
 import processing_tools as ptools
+import filelists
 
 # load configuration
 config = ptools.config()
 
 # get list of input and output files as well as paths to grids and weights
 # and options for horizontal interpolation
-infiles, tempfiles, weights, grids, options = ptools.get_interpolationfilelist(**config)
+infiles, tempfiles, weights, grids, options = filelists.get_interpolationfilelist(**config)
 # ID of this job
 # Each job gets an own ID from 0 to N, where N is the number of jobs in the job array
 # N is specified when job is submitted with 

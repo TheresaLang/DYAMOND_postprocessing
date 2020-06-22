@@ -21,6 +21,7 @@ from importlib import reload
 from os.path import join
 import processing_tools as ptools
 import analysis_tools as atools
+import filelists
 
 ptools = reload(ptools)
 atools = reload(atools)
@@ -29,7 +30,7 @@ config = ptools.config()
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
 num_samples = config['num_samples']
-models, runs, infiles, outfiles = ptools.get_samplefilelist(num_samples, **config)
+models, runs, infiles, outfiles = filelists.get_samplefilelist(num_samples, **config)
 heightfile = join(config['data_dir'], models[ID], 'target_height.nc')
 landmaskfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/land_mask.nc'
 

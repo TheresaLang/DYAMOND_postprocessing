@@ -19,11 +19,12 @@ import os
 import numpy as np
 from os.path import join
 import processing_tools as ptools
+import filelists
 
 # load config
 config = ptools.config()
 # get list of filenames for input and output files (one entry per variable)
-infiles, outfiles = ptools.get_sellonlatboxfilelist(**config)
+infiles, outfiles = filelists.get_sellonlatboxfilelist(**config)
 
 # ID of this job
 # Each job gets an own ID from 0 to N, where N is the number of jobs in the job array

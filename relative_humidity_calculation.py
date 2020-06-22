@@ -24,12 +24,13 @@ import typhon
 import analysis_tools as atools
 import processing_tools as ptools
 from netCDF4 import Dataset
+import filelists
 
 # load config
 config = ptools.config()
 
 # paths to files containing temperature, pressure and specific humidity
-models, runs, temp_files, qv_files, pres_files = ptools.get_rhcalculation_filelist(**config)
+models, runs, temp_files, qv_files, pres_files = filelists.get_rhcalculation_filelist(**config)
 timesteps = config['num_timesteps']
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0))
 timestep_ID = np.mod(ID, timesteps) # ID corresponds to timestep

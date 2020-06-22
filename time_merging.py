@@ -20,12 +20,13 @@ import os
 import numpy as np
 from os.path import join
 import processing_tools as ptools
+import filelists
 
 # load config
 config = ptools.config()
 
 # get lists with input files (that shall be merged) and output files 
-infiles, outfiles = ptools.get_mergingfilelist(**config)
+infiles, outfiles = filelists.get_mergingfilelist(**config)
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to variable
 

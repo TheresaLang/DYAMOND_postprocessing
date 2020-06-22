@@ -21,12 +21,13 @@ import os
 import numpy as np
 from os.path import join
 import processing_tools as ptools
+import filelists
 
 # load configuration
 config = ptools.config()
 
 # get list of input and output files and options for horizontal interpolation
-models, infiles, tempfiles, outfiles, option_1, option_2 = ptools.get_preprocessingfilelist(**config)
+models, infiles, tempfiles, outfiles, option_1, option_2 = filelists.get_preprocessingfilelist(**config)
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to infile
 

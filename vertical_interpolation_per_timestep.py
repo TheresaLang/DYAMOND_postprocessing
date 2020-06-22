@@ -25,12 +25,13 @@ import typhon
 import analysis_tools as atools
 import processing_tools as ptools
 from netCDF4 import Dataset
+import filelists
 
 # load config
 config = ptools.config()
 
 # paths to input files, output files and file containing model level heights 
-models, runs, variables, infiles, heightfiles, targetheightfiles = ptools.get_vinterpolation_per_timestep_filelist(**config)
+models, runs, variables, infiles, heightfiles, targetheightfiles = filelists.get_vinterpolation_per_timestep_filelist(**config)
 
 timesteps = config['num_timesteps']
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0))

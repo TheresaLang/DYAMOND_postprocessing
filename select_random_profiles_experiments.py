@@ -21,6 +21,7 @@ from importlib import reload
 from os.path import join
 import processing_tools as ptools
 import analysis_tools as atools
+import filelists
 
 ptools = reload(ptools)
 atools = reload(atools)
@@ -32,7 +33,7 @@ experiments = np.arange(10)
 experiment = experiments[ID]
 config['experiment'] = experiment
 num_samples = config['num_samples']
-models, runs, infiles, outfiles = ptools.get_samplefilelist(num_samples, **config)
+models, runs, infiles, outfiles = filelists.get_samplefilelist(num_samples, **config)
 heightfile = join(config['data_dir'], config['models'][0], 'target_height.nc')
 landmaskfile = join(config['data_dir'], 'ICON', 'land_mask.nc')
 
