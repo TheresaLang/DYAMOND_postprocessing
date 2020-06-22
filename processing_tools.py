@@ -847,7 +847,15 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     for t in range(num_timesteps):
         r = random.sample(list(zip(lat_not_masked, lon_not_masked)), num_samples_timestep)
         lat_inds[t], lon_inds[t] = zip(*r)
-          
+    
+    # save indices
+    array2D_to_netCDF(
+                lat_inds, 'idx', '', (range(timesteps), range(num_samples_timestep)), ('timestep', 'profile_index'), outnames[-1], overwrite=True
+            )
+    array2D_to_netCDF(
+                lon_inds, 'idx', '', (range(timesteps), range(num_samples_timestep)), ('timestep', 'profile_index'), outnames[-2], overwrite=True
+            )
+    
     profiles = {}
     profiles_sorted = {}
     #latlon = np.meshgrid(lat, lon)
@@ -898,10 +906,6 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             
     logger.info('Calculate IWV and sort')
     # calculate IWV
-    print(height)
-    print(profiles['PRES'].shape)
-    print(profiles['TEMP'].shape)
-    print(profiles['QV'].shape)
     profiles['IWV'] = utils.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)
     # get indices to sort by IWV
     IWV_sort_idx = np.argsort(profiles['IWV'])
@@ -3010,7 +3014,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
             file = os.path.join(data_dir, model, file)
             infile_sublist.append(file) 
 
-        for var in variables + ['IWV', 'lon', 'lat', 'timestep']:
+        for var in variables + ['IWV', 'lon', 'lat', 'lon_ind', 'lat_ind']:
             outfile = f'{model}-{run}_{var}_sample_{num_samples_tot}_{start_date_out}-{end_date_out}{sample_day_str}{latlonstr}{expstr}.nc'
             outfile = os.path.join(data_dir, model, 'random_samples', outfile)
             outfile_sublist.append(outfile)
