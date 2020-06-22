@@ -13,6 +13,7 @@ from scipy.interpolate import interp1d
 from netCDF4 import Dataset
 import matplotlib.pyplot as plt
 from moisture_space import utils
+import netCDF_tools as nctools
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -306,7 +307,7 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_RH_{date_str}_{hour_str}_hinterp.nc'
     outname = os.path.join(temp_dir, outname)
-    latlonheightfield_to_netCDF(height, lat, lon, rh, 'RH', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
+    nctools.latlonheightfield_to_netCDF(height, lat, lon, rh, 'RH', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
 
 def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile, timestep, model, run, time_period, temp_dir, **kwargs):
     """ Calculate vertical velocity w from pressure velocity omega (requires temperature, specific humidity and pressure).
@@ -367,7 +368,7 @@ def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile
     outname = os.path.join(temp_dir, outname)
     logger.info('Save file')
     print(outname)
-    latlonheightfield_to_netCDF(height, lat, lon, w, 'W', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
+    nctools.latlonheightfield_to_netCDF(height, lat, lon, w, 'W', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
          
     
 def interpolate_vertically_per_timestep(infile, height_file, target_height_file, timestep, model, run, variable, time_period, temp_dir, **kwargs):
@@ -431,7 +432,7 @@ def interpolate_vertically_per_timestep(infile, height_file, target_height_file,
     # save interpolated field to netCDF file
     logger.info('Save to file')
     field_interp = np.expand_dims(field_interp, axis=0)
-    latlonheightfield_to_netCDF(target_height, lat, lon, field_interp,\
+    nctools.latlonheightfield_to_netCDF(target_height, lat, lon, field_interp,\
                                 variable, units[variable], outname, time_dim=True, time_var=timestep*3, overwrite=True)  
         
 def interpolation_to_halflevels_per_timestep(infile, model, run, variable, timestep, time_period, data_dir, temp_dir, **kwargs):
@@ -475,7 +476,7 @@ def interpolation_to_halflevels_per_timestep(infile, model, run, variable, times
     height = np.arange(field_interp.shape[1])
     # Save to file
     logger.info('Save to file')
-    latlonheightfield_to_netCDF(height, lat, lon, field_interp, variable, units[variable], outname, time_dim=True, time_var=timestep*3, overwrite=True)
+    nctools.latlonheightfield_to_netCDF(height, lat, lon, field_interp, variable, units[variable], outname, time_dim=True, time_var=timestep*3, overwrite=True)
             
 def calc_level_pressure_from_surface_pressure(surf_pres_file, timestep, model, run, temp_dir, time_period, **kwargs):
     """ Calculate pressure at IFS model levels from surface pressure for one timestep contained in 
@@ -536,7 +537,7 @@ def calc_level_pressure_from_surface_pressure(surf_pres_file, timestep, model, r
     logger.info('Save pressure to file')
     height = np.arange(pres.shape[0])
     pres = np.expand_dims(pres, axis=0)
-    latlonheightfield_to_netCDF(height, lat, lon, pres, 'PRES', 'Pa', outname, time_dim=True, time_var=timestep*3, overwrite=True)
+    nctools.latlonheightfield_to_netCDF(height, lat, lon, pres, 'PRES', 'Pa', outname, time_dim=True, time_var=timestep*3, overwrite=True)
     
 def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, run, time_period, temp_dir, **kwargs):
     """ Calculate level heights from level pressure and layer temperature assuming hydrostatic equilibrium (Needed
@@ -612,7 +613,7 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
     logger.info('Save heights to file')
     h = np.arange(height.shape[0])
     height = np.expand_dims(height, axis=0)    
-    latlonheightfield_to_netCDF(h, lat, lon, height, 'H', 'm', outname, time_dim=True, time_var=timestep*3, overwrite=True)
+    nctools.latlonheightfield_to_netCDF(h, lat, lon, height, 'H', 'm', outname, time_dim=True, time_var=timestep*3, overwrite=True)
 
 
 def calc_net_radiation_flux(infiles, tempfile, outfile, flux_names):
@@ -671,7 +672,7 @@ def deaccumulate_fields(model, infile, variable):
     os.system(f'mv {infile} {filename_new}')
         
     outname = infile
-    latlonfield_to_netCDF(lat, lon, field_deacc, variable, 'W m^-2', outname, time_dim=True, time_var=time_new, overwrite=True)
+    nctools.latlonfield_to_netCDF(lat, lon, field_deacc, variable, 'W m^-2', outname, time_dim=True, time_var=time_new, overwrite=True)
     
 def pressure2height(p, T, z0=None):
     """Convert pressure to height based on the hydrostatic equilibrium.
@@ -849,11 +850,11 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         lat_inds[t], lon_inds[t] = zip(*r)
     
     # save indices
-    array2D_to_netCDF(
+    nctools.array2D_to_netCDF(
         lat_inds, 'idx', '', (range(num_timesteps), range(num_samples_timestep)),
         ('timestep', 'profile_index'), outnames[-1], overwrite=True
             )
-    array2D_to_netCDF(
+    nctools.array2D_to_netCDF(
         lon_inds, 'idx', '', (range(num_timesteps), range(num_samples_timestep)),
         ('timestep', 'profile_index'), outnames[-2], overwrite=True
             )
@@ -916,12 +917,12 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
         if var in variables_2D:
             profiles_sorted[var] = profiles[var][IWV_sort_idx]
-            vector_to_netCDF(
+            nctools.vector_to_netCDF(
                 profiles_sorted[var], var, '', range(num_samples_tot), 'profile_index', outfiles[i], overwrite=True
             )
         else:
             profiles_sorted[var] = profiles[var][:, IWV_sort_idx]
-            array2D_to_netCDF(
+            nctools.array2D_to_netCDF(
                 profiles_sorted[var], var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outfiles[i], overwrite=True
             )
     
@@ -1009,7 +1010,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             height
         )
         outname = filenames.format(model, run, 'IWP', num_samples, start_date, end_date, sample_days_str, '')
-        vector_to_netCDF(
+        nctools.vector_to_netCDF(
             profiles_sorted['IWP'], 'IWP', '', range(num_samples), 'profile_index', outname, overwrite=True
         )
         
@@ -1345,172 +1346,6 @@ def get_pressure_scaling_parameters(model):
 
     return a, b
         
-def latlonheightfield_to_netCDF(height, latitude, longitude, field, varname, varunit, outname, time_dim=False, time_var=None, overwrite=True):
-    """ Saves a field with dimensions (height, latitude, longitude) to a NetCDF file.
-    
-    Parameters:
-        height (1D-array, dimension nheight): height levels in m
-        latitude (1D-array, dimension nlat): latitudes in deg North
-        longitude (1D-array, dimension nlon): longitudes in deg East
-        field (3D-array, dimensions (nheight, nlat, nlon)): field with variable to save
-        varname (string): name of variable (e.g. 't' or 'q')
-        varunit (string): unit of variable
-        outname (string): name for output file
-        time (bool): if True, a dimension for time (with length 1) is added
-        overwrite (boolean): if True, exisiting files with the same filename are overwritten
-    """
-    if (os.path.isfile(outname)) and overwrite:
-        os.remove(outname)
-    elif (os.path.isfile(outname)) and overwrite==False:
-        print('File {} exists. Not overwriting.'.format(outname))
-        return
-
-    with Dataset(outname, 'w') as f:
-        lat = f.createDimension('lat', len(latitude))
-        lon = f.createDimension('lon', len(longitude))
-        zlev = f.createDimension('zlev', len(height))
-
-        lat = f.createVariable('lat','f4',('lat',))
-        lon = f.createVariable('lon','f4',('lon',))
-        zlev = f.createVariable('zlev','f4',('zlev',))
-        
-        if time_dim:
-            time = f.createDimension('time', 1)
-        if time_var is not None:
-            time = f.createVariable('time', 'f4', ('time',))
-
-        lat.units = 'degrees north'
-        lon.units= 'degrees east'
-        zlev.units = 'm'
-
-        lat[:] = latitude[:]
-        lon[:] = longitude[:]
-        zlev[:] = height[:]
-        if time_var is not None:
-            time.units = 'hours'
-            time = time_var
-        
-        if time_dim:
-            v = f.createVariable(varname,'f4',dimensions=('time','zlev','lat','lon'))
-            f[varname][:,:,:,:]=field[:,:,:,:]
-
-            
-        else:
-            v = f.createVariable(varname,'f4',dimensions=('zlev','lat','lon'))
-            f[varname][:,:,:]=field[:,:,:] 
-        v.units = varunit
-
-def latlonfield_to_netCDF(latitude, longitude, field, varname, varunit, outname, time_dim=False, time_var=None, overwrite=True):
-    """ Saves a field with dimensions (latitude, longitude) to a NetCDF file.
-    
-    Parameters:
-        latitude (1D-array, dimension nlat): latitudes in deg North
-        longitude (1D-array, dimension nlon): longitudes in deg East
-        field (3D-array, dimensions (nheight, nlat, nlon)): field with variable to save
-        varname (string): name of variable (e.g. 't' or 'q')
-        varunit (string): unit of variable
-        outname (string): name for output file
-        time (bool): if True, a dimension for time (with length 1) is added
-        overwrite (boolean): if True, exisiting files with the same filename are overwritten
-    """
-    if (os.path.isfile(outname)) and overwrite:
-        os.remove(outname)
-    elif (os.path.isfile(outname)) and overwrite==False:
-        print('File {} exists. Not overwriting.'.format(outname))
-        return
-
-    with Dataset(outname, 'w') as f:
-        lat = f.createDimension('lat', len(latitude))
-        lon = f.createDimension('lon', len(longitude))
-
-        lat = f.createVariable('lat','f4',('lat',))
-        lon = f.createVariable('lon','f4',('lon',))
-        
-        if time_dim:
-            if time_var is not None:
-                time = f.createDimension('time', len(time_var))
-                time = f.createVariable('time', 'f4', ('time',))
-            else:
-                time = f.createDimension('time', 1)
-
-        lat.units = 'degrees north'
-        lon.units= 'degrees east'
-
-        lat[:] = latitude[:]
-        lon[:] = longitude[:]
-        
-        if time_var is not None:
-            time.units = 'hours'
-            time = time_var
-        
-        if time_dim:
-            v = f.createVariable(varname,'f4',dimensions=('time','lat','lon'))
-            f[varname][:,:,:]=field[:,:,:]
-           
-        else:
-            v = f.createVariable(varname,'f4',dimensions=('lat','lon'))
-            f[varname][:,:]=field[:,:] 
-        v.units = varunit
-        
-def array2D_to_netCDF(array, varname, varunit, dimensionvars, dimensionnames, outname, overwrite=True):
-    """ Saves a 1D-Array to a NetCDF file.
-    
-    Parameters:
-        vector (1D Array): Vector with variable to save
-        varname (string): Name of variable to save
-        varunit (string): Unit of variable to save
-        dimensionvar (Tuple of 1D Arrays): Grid the variable is given on (e.g. latitudes, longitudes, altitudes) 
-        dimensionname (Tuple of strings): Name of dimension associated with vector (e.g. 'lat', 'lon', 'height')
-        outname (string): Name of output file
-        overwrite (boolean): If True, exisiting files with the same filename are overwritten
-        
-    """
-    if (os.path.isfile(outname)) and overwrite:
-        os.remove(outname)
-    elif (os.path.isfile(outname)) and overwrite==False:
-        print('File {} exists. Not overwriting.'.format(outname))
-        return
-    
-    with Dataset(outname, 'w') as f:
-        dim0 = f.createDimension(dimensionnames[0], len(dimensionvars[0]))
-        dimvar0 = f.createVariable(dimensionnames[0], 'f4', (dimensionnames[0],))    
-        dimvar0[:] = dimensionvars[0]
-        
-        dim1 = f.createDimension(dimensionnames[1], len(dimensionvars[1]))
-        dimvar1 = f.createVariable(dimensionnames[1], 'f4', (dimensionnames[1],))    
-        dimvar1[:] = dimensionvars[1]
-
-        f.createVariable(varname, 'f4', dimensions=dimensionnames)
-        f[varname][:,:] = array[:,:]
-        
-def vector_to_netCDF(vector, varname, varunit, dimensionvar, dimensionname, outname, overwrite=True):
-    """ Saves a 1D-Array to a NetCDF file.
-    
-    Parameters:
-        vector (1D Array): Vector with variable to save
-        varname (string): Name of variable to save
-        varunit (string): Unit of variable to save
-        dimensionvar (1D Array): Grid the variable is given on (e.g. latitudes, longitudes, altitudes) 
-        dimensionname (string): Name of dimension associated with vector (e.g. 'lat', 'lon', 'height')
-        outname (string): Name of output file
-        overwrite (boolean): If True, exisiting files with the same filename are overwritten
-        
-    """
-    if (os.path.isfile(outname)) and overwrite:
-        os.remove(outname)
-    elif (os.path.isfile(outname)) and overwrite==False:
-        print('File {} exists. Not overwriting.'.format(outname))
-        return
-    
-    with Dataset(outname, 'w') as f:
-        print(dimensionvar)
-        dim = f.createDimension(dimensionname, len(dimensionvar))
-        dimvar = f.createVariable(dimensionname, 'f4', (dimensionname,))    
-        dimvar[:] = dimensionvar[:]
-
-        f.createVariable(varname, 'f4', dimensions=(dimensionname))
-        f[varname][:] = vector[:]
-
 
     
     
