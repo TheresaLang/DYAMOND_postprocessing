@@ -1695,7 +1695,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
             file = os.path.join(data_dir, model, file)
             infile_sublist.append(file) 
 
-        for var in variables + ['IWV', 'lon', 'lat', 'lon_ind', 'lat_ind']:
+        for var in variables + ['IWV', 'lon', 'lat', 'ind_lon', 'ind_lat', 'sort_ind']:
             outfile = f'{model}-{run}_{var}_sample_{num_samples_tot}_{start_date_out}-{end_date_out}{sample_day_str}{latlonstr}{expstr}.nc'
             outfile = os.path.join(data_dir, model, 'random_samples', outfile)
             outfile_sublist.append(outfile)
