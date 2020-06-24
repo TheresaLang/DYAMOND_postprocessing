@@ -852,11 +852,11 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     # save indices
     nctools.array2D_to_netCDF(
         lat_inds, 'idx', '', (range(num_timesteps), range(num_samples_timestep)),
-        ('timestep', 'profile_index'), outfiles[-1], overwrite=True
+        ('timestep', 'profile_index'), outfiles[-2], overwrite=True
             )
     nctools.array2D_to_netCDF(
         lon_inds, 'idx', '', (range(num_timesteps), range(num_samples_timestep)),
-        ('timestep', 'profile_index'), outfiles[-2], overwrite=True
+        ('timestep', 'profile_index'), outfiles[-3], overwrite=True
             )
     
     profiles = {}
@@ -887,8 +887,8 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                     else:
                         profiles[var][start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j]].filled(np.nan)
         else:
-            profiles[var] = np.ones((num_levels, num_samples_tot)) * np.nan
-            profiles_sorted[var] = np.ones((num_levels, num_samples_tot)) * np.nan
+            profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
+            profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
             for j, t in enumerate(timesteps):
                 start = j * num_samples_timestep
                 end = start + num_samples_timestep
@@ -912,21 +912,25 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     profiles['IWV'] = utils.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)
     # get indices to sort by IWV
     IWV_sort_idx = np.argsort(profiles['IWV'])
+    
+    # save indices
+    nctools.vector_to_netCDF(
+        IWV_sort_idx, 'idx', '', range(num_samples_timestep * num_timesteps), 'profile_index', outfiles[-1], overwrite=True
+            )
             
     # sort by IWV and save output
     for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
         if var in variables_2D:
             profiles_sorted[var] = profiles[var][IWV_sort_idx]
             nctools.vector_to_netCDF(
-                profiles_sorted[var], var, '', range(num_samples_tot), 'profile_index', outfiles[i], overwrite=True
+                profiles_sorted[var], var, '', range(num_samples_timestep * num_timesteps), 'profile_index', outfiles[i], overwrite=True
             )
         else:
             profiles_sorted[var] = profiles[var][:, IWV_sort_idx]
             nctools.array2D_to_netCDF(
-                profiles_sorted[var], var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outfiles[i], overwrite=True
+                profiles_sorted[var], var, '', (height, range(num_samples_timestep * num_timesteps)), ('height', 'profile_index'), outfiles[i], overwrite=True
             )
-    
-    
+
 def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
     ocean basins. Output is saved as .pkl files.
