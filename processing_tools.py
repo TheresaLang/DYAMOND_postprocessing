@@ -931,6 +931,128 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                 profiles_sorted[var], var, '', (height, range(num_samples_timestep * num_timesteps)), ('height', 'profile_index'), outfiles[i], overwrite=True
             )
 
+def advection_for_random_profiles(model, run, time_period, num_samples, data_dir, **kwargs):
+    """ Calculate horizontal advection of QV and RH for randomly selected profiles.
+    
+    Parameters:
+        model (str): name of model
+        run (str): name of model run
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
+        num_samples (num): number of randomly selected profiles
+        data_dir (str): Path to output directory
+    """
+    time = pd.date_range(time_period[0], time_period[1], freq='1D')
+    start_date = time[0].strftime("%m%d")
+    end_date = time[-1].strftime("%m%d")
+
+    logger.info('Input and output variables and filenames')
+    input_variables = ['U', 'V', 'QV', 'RH']
+    output_variables = ['U', 'V', 'A_QV_h', 'A_RH_h']
+    filename = '{}-{}_{}_hinterp_merged_{}-{}.nc'
+    filename_out = '{}-{}_{}_sample_{}_{}-{}.nc'
+    filename_lat_idx = filename_out.format(model, run, 'ind_lat', num_samples, start_date, end_date)
+    filename_lat_idx = os.path.join(data_dir, model, 'random_samples', filename_lat_idx)
+    filename_lon_idx = filename_out.format(model, run, 'ind_lon', num_samples, start_date, end_date)
+    filename_lon_idx = os.path.join(data_dir, model, 'random_samples', filename_lon_idx)
+    filename_sort_idx = filename_out.format(model, run, 'sort_ind', num_samples, start_date, end_date)
+    filename_sort_idx = os.path.join(data_dir, model, 'random_samples', filename_sort_idx)
+    testfile = os.path.join(data_dir, model, filename.format(model, run, input_variables[0], start_date, end_date))
+    filenames = {}
+    outnames = {}
+    for var in input_variables:
+        filenames[var] = os.path.join(data_dir, model,
+                                      filename.format(model, run, var, start_date, end_date)
+                                     )
+    for var in output_variables:
+        outnames[var] = os.path.join(data_dir, model, 'random_samples',
+                                     filename_out.format(model, run, var, num_samples, start_date, end_date)
+                                     )
+
+    logger.info('Read lats and lons')
+    with Dataset(testfile) as ds:
+        lat = ds.variables['lat'][:]
+        lon = ds.variables['lon'][:]
+        height = ds.variables['height'][:]
+        num_levels = ds.variables[input_variables[0]].shape[1]
+
+    logger.info('Read indices from files')
+    with Dataset(filename_sort_idx) as ds:
+        sort_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
+
+    with Dataset(filename_lat_idx) as ds:
+        lat_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
+
+    with Dataset(filename_lon_idx) as ds:
+        lon_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
+
+    num_timesteps = lon_idx.shape[0]
+    num_samples_timestep = lon_idx.shape[1]
+    num_samples_tot = num_samples_timestep * num_timesteps
+
+    profiles = {}
+    profiles['lat'] = np.ones((num_samples_tot)) * np.nan
+
+    logger.info('Read latitudes from file')
+    for t in range(num_timesteps):
+        start = t * num_samples_timestep
+        end = start + num_samples_timestep
+        profiles['lat'][start:end] = lat[lat_idx[t]]
+
+    logger.info('Calculate distance to next grid points')
+    dx = 0.1
+    dy = 0.1
+    profiles['dx'] = 111000 * dx * np.cos(np.deg2rad(profiles['lat']))
+    profiles['dy'] = 111000 * dy        
+
+    logger.info('Allocate array for selected profiles')
+    for var in ['U', 'V', 'A_QV_h', 'A_RH_h']:
+        profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
+        #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
+
+    logger.info('Read U and V from files')
+    for var in ['U', 'V']:
+        for t in range(num_timesteps):
+            start = t * num_samples_timestep
+            end = start + num_samples_timestep
+            with Dataset(filenames[var]) as ds:
+                profiles[var][:, start:end] = ds.variables[var][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
+
+    logger.info('Read QV and RH from files and calculate advection')
+    for t in range(num_timesteps):
+        print(t)
+        start = t * num_samples_timestep
+        end = start + num_samples_timestep
+        lon_idx_next = lon_idx[t] + 1
+        lon_idx_next[lon_idx_next == len(lon)] = 0
+        lon_idx_before = lon_idx[t] - 1
+        lon_idx_before[lon_idx_before < 0] = len(lon) - 1
+        with Dataset(filenames['QV']) as ds:
+            dQdx = (ds.variables['QV'][t][:, lat_idx[t], lon_idx_next]
+                    - ds.variables['QV'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
+            dQdy = (ds.variables['QV'][t][:, lat_idx[t] + 1, lon_idx[t]]
+                    - ds.variables['QV'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+
+            profiles['A_QV_h'][:, start:end] = profiles['U'][:, start:end] * dQdx
+            + profiles['V'][:, start:end] * dQdy
+
+        with Dataset(filenames['RH']) as ds:
+            dRHdx = (ds.variables['RH'][t][:, lat_idx[t], lon_idx_next]
+                     - ds.variables['RH'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
+            dRHdy = (ds.variables['RH'][t][:, lat_idx[t] + 1, lon_idx[t]]
+                    - ds.variables['RH'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+
+            profiles['A_RH_h'][:, start:end] = profiles['U'][:, start:end] * dRHdx
+            + profiles['V'][:, start:end] * dRHdy
+
+    logger.info('Save results to files')
+    for var in ['A_QV_h', 'A_RH_h', 'U', 'V']:
+        profiles_sorted = profiles[var][:, sort_idx]
+        nctools.array2D_to_netCDF(
+                    profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
+                )
+    
+    
 def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
     ocean basins. Output is saved as .pkl files.
