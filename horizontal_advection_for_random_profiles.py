@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-#SBATCH --job-name=random_profile_selection
-#SBATCH --output=logs/random_profile_selection-%j.out
-##SBATCH --error=random_profile_selection-%j.err
+#SBATCH --job-name=horizontal_advection
+#SBATCH --output=logs/horizontal_advection-%j.out
 
 #SBATCH --account=mh1126       # Charge resources on this project account
 #SBATCH --partition=compute,compute2
@@ -20,7 +19,8 @@ import processing_tools as ptools
 
 # load configuration
 config = ptools.config()
-
+models = config['models']
+runs = config['runs']
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
 
 ptools.advection_for_random_profiles(models[ID], runs[ID], **config)
