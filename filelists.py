@@ -74,6 +74,8 @@ def get_modelspecific_varnames(model):
             'IWV': 'TQV',
             'QC': 'QL',
             'W': 'W', 
+            'V': 'V',
+            'U': 'U',
             'W500': 'OMEGA',
             'OMEGA': '-'
         }    
@@ -199,6 +201,8 @@ def get_variable_units():
         'ICI': 'kg m**-2',
         'H': 'm',
         'W': 'm s**-1',
+        'U': 'm s**-1',
+        'V': 'm s**-1',
         'OMEGA': 'Pa s**-1',
         'STOA': 'W m**-2',
         'STOAC': 'W m**-2',
@@ -493,6 +497,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OLRC': 'flx',
                 'QC': 'QL',
                 'W': 'W',
+                'U': 'U',
+                'V': 'V',
                 'STOA': 'flx',
                 'STOAC': 'flx',
                 'OMEGA': '-'
