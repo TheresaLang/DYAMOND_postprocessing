@@ -7,6 +7,7 @@ import json
 import typhon
 import random
 import pickle
+import filelists
 import analysis_tools as atools
 from time import sleep
 from scipy.interpolate import interp1d
@@ -397,7 +398,7 @@ def interpolate_vertically_per_timestep(infile, height_file, target_height_file,
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_{variable}_hinterp_vinterp_{date_str}_{hour_str}.nc'
     outname = os.path.join(temp_dir, outname)    
-    units = get_variable_units()
+    units = filelists.get_variable_units()
     
     # Read variables from files
     logger.info('Read variables from files')
@@ -958,6 +959,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     filename_sort_idx = filename_out.format(model, run, 'sort_ind', num_samples, start_date, end_date)
     filename_sort_idx = os.path.join(data_dir, model, 'random_samples', filename_sort_idx)
     testfile = os.path.join(data_dir, model, filename.format(model, run, input_variables[0], start_date, end_date))
+    heightfile = filelists.get_path2targetheightfile(model, data_dir)
     filenames = {}
     outnames = {}
     for var in input_variables:
@@ -973,8 +975,10 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     with Dataset(testfile) as ds:
         lat = ds.variables['lat'][:]
         lon = ds.variables['lon'][:]
-        height = ds.variables['height'][:]
         num_levels = ds.variables[input_variables[0]].shape[1]
+        
+    with Dataset(heightfile) as ds:
+        height = ds.variables['target_height']
 
     logger.info('Read indices from files')
     with Dataset(filename_sort_idx) as ds:
@@ -1049,7 +1053,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     for var in ['A_QV_h', 'A_RH_h', 'U', 'V']:
         profiles_sorted = profiles[var][:, sort_idx]
         nctools.array2D_to_netCDF(
-                    profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
+                    profiles_sorted[var], var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
                 )
     
     
@@ -1070,7 +1074,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt']
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt', 'A_RH_h', 'A_QV_h']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
     extra_variables = ['A_QV', 'A_RH', 'DRH_Dt']
     datapath = f'{data_dir}/{model}/random_samples/'
