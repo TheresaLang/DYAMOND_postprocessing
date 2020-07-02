@@ -978,7 +978,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         num_levels = ds.variables[input_variables[0]].shape[1]
         
     with Dataset(heightfile) as ds:
-        height = ds.variables['target_height']
+        height = ds.variables['target_height'][:]
 
     logger.info('Read indices from files')
     with Dataset(filename_sort_idx) as ds:
@@ -1053,7 +1053,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     for var in ['A_QV_h', 'A_RH_h', 'U', 'V']:
         profiles_sorted = profiles[var][:, sort_idx]
         nctools.array2D_to_netCDF(
-                    profiles_sorted[var], var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
+                    profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
                 )
     
     
