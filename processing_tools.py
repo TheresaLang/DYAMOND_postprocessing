@@ -1174,10 +1174,12 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
         else:
             axis=1
             splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=axis)
-            
-        for s in splitted_array[var]:
-            print(s.shape)
-        perc['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
+        
+        if var == 'PRES':
+            # Average pressure in log-space
+            perc['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(a), axis=axis)) for a in splitted_array[var]])
+        else:
+            perc['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
         perc['std'][var] = np.asarray([np.nanstd(a, axis=axis) for a in splitted_array[var]])
         perc['min'][var] = np.asarray([np.nanmin(a, axis=axis) for a in splitted_array[var]])
         perc['max'][var] = np.asarray([np.nanmax(a, axis=axis) for a in splitted_array[var]])
@@ -1208,7 +1210,10 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             binned_profiles[var] = [profiles_sorted[var][:, bin_idx == bi] for bi in bins]
             axis=1
 
-        binned['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
+        if var == 'PRES':
+            binned['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(p), axis=axis)) for p in binned_profiles[var]])
+        else:
+            binned['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
         binned['std'][var] = np.asarray([np.nanstd(p, axis=axis) for p in binned_profiles[var]])
         binned['median'][var] = np.asarray([np.nanmedian(p, axis=axis) for p in binned_profiles[var]])
         binned['min'][var] = np.asarray(
@@ -1356,7 +1361,10 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
                 splitted_array[var] = np.array_split(profiles[b][var], num_percs, axis=1)
                 axis=1
                 
-            perc[b]['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
+            if var == 'PRES':
+                perc[b]['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(a), axis=axis)) for a in splitted_array[var]])
+            else:
+                perc[b]['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
             perc[b]['std'][var] = np.asarray([np.nanstd(a, axis=axis) for a in splitted_array[var]])
             perc[b]['min'][var] = np.asarray([np.nanmin(a, axis=axis) for a in splitted_array[var]])
             perc[b]['max'][var] = np.asarray([np.nanmax(a, axis=axis) for a in splitted_array[var]])
@@ -1388,8 +1396,11 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
             else:
                 binned_profiles[var] = [profiles[b][var][:, bin_idx == bi] for bi in bins]
                 axis=1
-                
-            binned[b]['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
+            
+            if var == 'PRES':
+                binned[b]['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(p), axis=axis)) for p in binned_profiles[var]])
+            else:
+                binned[b]['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
             binned[b]['std'][var] = np.asarray([np.nanstd(p, axis=axis) for p in binned_profiles[var]])
             binned[b]['median'][var] = np.asarray([np.nanmedian(p, axis=axis) for p in binned_profiles[var]])
             binned[b]['min'][var] = np.asarray(
