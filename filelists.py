@@ -88,6 +88,8 @@ def get_modelspecific_varnames(model):
             'QI': 'QI',
             'QC': 'param83.1.0',
             'W': 'param120.128.192',
+            'U': '',
+            'V': '',
             'PRES': 'PRES',
             'RH': 'RH',
             'OLR': 'OLR',
@@ -110,6 +112,8 @@ def get_modelspecific_varnames(model):
             'OLR': 'LWNTA',
             'QC': 'QC',
             'W': 'W',
+            'U': 'U',
+            'V': 'V',
             'STOA': 'SWNTA',
             'OMEGA': '-'
         }
@@ -176,6 +180,8 @@ def get_modelspecific_varnames(model):
             'IWV': 'TQV',
             'OLR': 'ACCTHB_T',
             'W': 'W',
+            'U': 'U',
+            'V': 'V',
             'QC': 'param83.1.0',
             'STOA': 'ACCSOB_T',
             'OMEGA': 'W',
@@ -581,6 +587,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'QI': 'param84.1.0', 
                 'QC': 'param83.1.0',
                 'W': 'param120.128.192',
+                'U': 'U',
+                'V': 'V',
                 'OLR': 'ttr',
                 'OLRC': 'ttrc',
                 'STOA': 'tsr',
@@ -628,6 +636,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OLR': '.LWNTA.2D',
                 'QC': '_QC',
                 'W': '_W',
+                'U': '_U',
+                'V': '_V',
                 'STOA': '.SWNTA.2D',
                 'OLRC': '-',
                 'STOAC': '-',
@@ -922,6 +932,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'QI': 'mars_out_ml_moist',
                 'QC': 'mars_out_ml_moist',
                 'W': 'gg_mars_out_ml_upper_sh',
+                'U': 'gg_uv_mars_out_ml_vor_div_sh',
+                'V': 'gg_uv_mars_out_ml_vor_div_sh',
                 'OLR': 'mars_out',
                 'IWV': 'mars_out',
                 'OLRC': 'mars_out',
@@ -942,6 +954,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'QI': 'param84.1.0', 
                 'QC': 'param83.1.0',
                 'W': 'param120.128.192',
+                'U': 'U',
+                'V': 'V',
                 'OLR': 'ttr',
                 'OLRC': 'ttrc',
                 'STOA': 'tsr',
@@ -955,7 +969,9 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'QV': 113,
                 'QI': 113,
                 'QC': 113,
-                'W':113,
+                'W': 113,
+                'U': 113,
+                'V': 113,
                 'SURF_PRES': 1,
                 'OLR': 1,
                 'IWV': 1,
@@ -988,7 +1004,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         filename = var2filename[var]
                         in_file = f'{filename}.{hour_con}'
                         in_file = os.path.join(stem, in_file)
-                        if var in ['TEMP', 'W', 'GH'] or (var == 'SURF_PRES' and run == '4.0km'):
+                        if var in ['TEMP', 'W', 'GH', 'U', 'V'] or (var == 'SURF_PRES' and run == '4.0km'):
                             in_file = in_file+'.grib'
 
                         date_str = time[i].strftime("%m%d")
@@ -1143,6 +1159,8 @@ def get_preprocessing_ARPEGE_1_filelist(variables, time_period, temp_dir, **kwar
         'QI': '0.1.84',
         'QC': '0.1.83',
         'W': '0.2.9',
+        'U': '0.2.2',
+        'V': '0.2.3',
         'OLR': '0.5.5',
         'STOA': '0.4.9',
         'SURF_PRES': '0.3.0',
@@ -1155,6 +1173,8 @@ def get_preprocessing_ARPEGE_1_filelist(variables, time_period, temp_dir, **kwar
         'QI': '119',
         'QC': '119',
         'W': '119',
+        'U': '119',
+        'V': '119',
         'OLR': '8',
         'STOA': '8',
         'SURF_PRES': '1',
