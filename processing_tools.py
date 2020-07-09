@@ -1181,7 +1181,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             axis=1
             splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=axis)
         
-        if var == 'PRES':
+        if var in ['PRES', 'QV']:
             # Average pressure in log-space
             perc['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(a), axis=axis)) for a in splitted_array[var]])
         else:
@@ -1216,7 +1216,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             binned_profiles[var] = [profiles_sorted[var][:, bin_idx == bi] for bi in bins]
             axis=1
 
-        if var == 'PRES':
+        if var in ['PRES', 'QV']:
             binned['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(p), axis=axis)) for p in binned_profiles[var]])
         else:
             binned['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
@@ -1367,7 +1367,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
                 splitted_array[var] = np.array_split(profiles[b][var], num_percs, axis=1)
                 axis=1
                 
-            if var == 'PRES':
+            if var in ['PRES', 'QV']:
                 perc[b]['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(a), axis=axis)) for a in splitted_array[var]])
             else:
                 perc[b]['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
@@ -1403,7 +1403,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
                 binned_profiles[var] = [profiles[b][var][:, bin_idx == bi] for bi in bins]
                 axis=1
             
-            if var == 'PRES':
+            if var in ['PRES', 'QV']:
                 binned[b]['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(p), axis=axis)) for p in binned_profiles[var]])
             else:
                 binned[b]['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
