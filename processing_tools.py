@@ -950,7 +950,10 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     logger.info('Input and output variables and filenames')
     input_variables = ['U', 'V', 'QV', 'RH']
     output_variables = ['U', 'V', 'A_QV_h', 'A_RH_h']
-    filename = '{}-{}_{}_hinterp_merged_{}-{}.nc'
+    if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS']:
+        filename = '{}-{}_{}_hinterp_vinterp_merged_{}-{}.nc'
+    else:
+        filename = '{}-{}_{}_hinterp_merged_{}-{}.nc'
     filename_out = '{}-{}_{}_sample_{}_{}-{}.nc'
     filename_lat_idx = filename_out.format(model, run, 'ind_lat', num_samples, start_date, end_date)
     filename_lat_idx = os.path.join(data_dir, model, 'random_samples', filename_lat_idx)
