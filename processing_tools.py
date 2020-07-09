@@ -1155,14 +1155,22 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             profiles_sorted['TEMP'], 
             height
         )
-           
+    # create mask to exclude profiles with no given longitude       
     nan_mask = np.isnan(profiles_sorted['lon'])
+    # create mask to exclude profiles with unrealistic advection values
+    tropo = np.where(height < 20000)
+    if 'A_QV_h' in variables:
+        wrong_mask = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -1e-5, axis=0),
+                                  np.any(profiles_sorted['A_QV_h'][tropo] > 1e-5, axis=0))
+
+        nan_mask = np.logical_or(nan_mask, wrong_mask).astype(int)
     
+    # set masked profiles to nan
     for var in variables+['lon', 'lat']+extra_variables:
         if var in variables_3D:
-            profiles_sorted[var] = profiles_sorted[var][:, np.logical_not(nan_mask)]
+            profiles_sorted[var][:, np.where(nan_mask)] = np.nan
         else:
-            profiles_sorted[var] = profiles_sorted[var][np.logical_not(nan_mask)]
+            profiles_sorted[var][np.where(nan_mask)] = np.nan
 
     perc = {s: {} for s in stats+['percentiles']}
     binned = {s: {} for s in stats+['count']}
@@ -1324,12 +1332,22 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
         height
     )
             
+    # create mask to exclude profiles with no given longitude       
     nan_mask = np.isnan(profiles_sorted['lon'])
-    for var in variables+['lon', 'lat', 'IWP', 'H_tropo', 'T_QV']:
+    # create mask to exclude profiles with unrealistic advection values
+    tropo = np.where(height < 20000)
+    if 'A_QV_h' in variables:
+        wrong_mask = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -1e-5, axis=0),
+                                  np.any(profiles_sorted['A_QV_h'][tropo] > 1e-5, axis=0))
+
+        nan_mask = np.logical_or(nan_mask, wrong_mask).astype(int)
+    
+    # set masked profiles to nan
+    for var in variables+['lon', 'lat']+extra_variables:
         if var in variables_3D:
-            profiles_sorted[var] = profiles_sorted[var][:, np.logical_not(nan_mask)]
+            profiles_sorted[var][:, np.where(nan_mask)] = np.nan
         else:
-            profiles_sorted[var] = profiles_sorted[var][np.logical_not(nan_mask)]
+            profiles_sorted[var][np.where(nan_mask)] = np.nan
     
     logger.info('Split profiles into corresponding ocean basins')
     # determine ocean basin for each profile
