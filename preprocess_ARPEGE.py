@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#SBATCH --job-name=IFS_preprocessing
+#SBATCH --job-name=ARPEGE_preprocessing
 #SBATCH --output=logs/ARPEGE_preprocessing-%j.out
 
 #SBATCH --account=mh1126       # Charge resources on this project account
