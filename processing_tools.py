@@ -162,7 +162,7 @@ def preprocess_ARPEGE_1(preprocess_dir, infile_2D, infile_3D, outfileprefix, mer
         tempfile_list_2D (list of str): list of filenames of 2D variables (files produced by
             gribsplit are renamed)
     """
-    variables_3D = ['GH', 'TEMP', 'QV', 'QI', 'QC', 'W']
+    variables_3D = ['GH', 'TEMP', 'QV', 'QI', 'QC', 'W', 'U', 'V']
     variables_2D = ['SURF_PRES', 'OLR', 'STOA']
     
     # split file containing 3D variables
