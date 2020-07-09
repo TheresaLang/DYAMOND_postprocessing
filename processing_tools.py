@@ -1051,6 +1051,9 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
 
             profiles['A_RH_h'][:, start:end] = profiles['U'][:, start:end] * dRHdx
             + profiles['V'][:, start:end] * dRHdy
+            
+    if model == 'SAM':
+        profiles['A_QV_h'] *= 1e-3
 
     logger.info('Save results to files')
     for var in ['A_QV_h', 'A_RH_h', 'U', 'V']:
