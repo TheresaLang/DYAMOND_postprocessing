@@ -933,7 +933,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             )
 
 def advection_for_random_profiles(model, run, time_period, num_samples, data_dir, **kwargs):
-    """ Calculate horizontal advection of QV and RH for randomly selected profiles.
+    """ Calculate vertical and horizontal advection of QV and RH for randomly selected profiles.
     
     Parameters:
         model (str): name of model
@@ -948,8 +948,8 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     end_date = time[-1].strftime("%m%d")
 
     logger.info('Input and output variables and filenames')
-    input_variables = ['U', 'V', 'QV', 'RH']
-    output_variables = ['U', 'V', 'A_QV_h', 'A_RH_h']
+    input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES']
+    output_variables = ['U', 'V', 'A_QV_h', 'A_RH_h', 'A_QV_v', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v']
     if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS']:
         filename = '{}-{}_{}_hinterp_vinterp_merged_{}-{}.nc'
     else:
@@ -965,10 +965,16 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     heightfile = filelists.get_path2targetheightfile(model, data_dir)
     filenames = {}
     outnames = {}
+    
     for var in input_variables:
-        filenames[var] = os.path.join(data_dir, model,
-                                      filename.format(model, run, var, start_date, end_date)
-                                     )
+        if model in ['ICON', 'MPAS'] and var == 'W':
+            filenames[var] = os.path.join(data_dir, model,
+                                          filename.format(model, run, 'WHL', start_date, end_date)
+                                         )
+        else:
+            filenames[var] = os.path.join(data_dir, model,
+                                          filename.format(model, run, var, start_date, end_date)
+                                         )
     for var in output_variables:
         outnames[var] = os.path.join(data_dir, model, 'random_samples',
                                      filename_out.format(model, run, var, num_samples, start_date, end_date)
@@ -1013,19 +1019,41 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     profiles['dy'] = 111000 * dy        
 
     logger.info('Allocate array for selected profiles')
-    for var in ['U', 'V', 'A_QV_h', 'A_RH_h']:
+    for var in ['U', 'V', 'W', 'PRES', 'TEMP', 'QV', 'RH', 'A_QV_v', 'A_RH_v', 'A_QV_h', 'A_RH_h', 'DRH_Dt_v', 'DRH_Dt_h']:
         profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
         #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
 
     logger.info('Read U and V from files')
-    for var in ['U', 'V']:
+    for var in ['U', 'V', 'W', 'TEMP', 'PRES', 'QV', 'RH']:
         for t in range(num_timesteps):
             start = t * num_samples_timestep
             end = start + num_samples_timestep
             with Dataset(filenames[var]) as ds:
-                profiles[var][:, start:end] = ds.variables[var][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
+                if model == 'SAM' and var == 'PRES':
+                    pres_mean = np.expand_dims(ds.variables['p'][:], 1) * 1e2
+                    pres_pert = ds.variables['PP'][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
+                    profiles[var][:, start:end] = pres_mean + pres_pert
+                else:
+                    profiles[var][:, start:end] = ds.variables[var][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
+    if model == 'SAM':
+        profiles['QV'] *= 1e-3
 
-    logger.info('Read QV and RH from files and calculate advection')
+    profiles['VMR'] = typhon.physics.specific_humidity2vmr(profiles['QV'])
+    
+    logger.info('Calculate vertical transport terms')
+    profiles['A_RH_v'] = -profiles['W'] * np.gradient(profiles['RH'], height, axis=0)
+    profiles['A_QV_v'] = -profiles['W'] * np.gradient(profiles['QV'], height, axis=0)
+    profiles['DRH_Dt_v'] = utils.drh_dt(
+            profiles['TEMP'], 
+            profiles['PRES'], 
+            profiles['RH'],
+            profiles['W']  
+        )
+    
+    logger.info('Read QV and RH from files and calculate horizontal transport terms')
+    R = typhon.constants.gas_constant_water_vapor
+    cp = typhon.constants.isobaric_mass_heat_capacity
+    L = typhon.constants.heat_of_vaporization
     for t in range(num_timesteps):
         print(t)
         start = t * num_samples_timestep
@@ -1040,8 +1068,8 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             dQdy = (ds.variables['QV'][t][:, lat_idx[t] + 1, lon_idx[t]]
                     - ds.variables['QV'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
 
-            profiles['A_QV_h'][:, start:end] = profiles['U'][:, start:end] * dQdx
-            + profiles['V'][:, start:end] * dQdy
+            profiles['A_QV_h'][:, start:end] = -(profiles['U'][:, start:end] * dQdx
+            + profiles['V'][:, start:end] * dQdy)
 
         with Dataset(filenames['RH']) as ds:
             dRHdx = (ds.variables['RH'][t][:, lat_idx[t], lon_idx_next]
@@ -1049,17 +1077,29 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             dRHdy = (ds.variables['RH'][t][:, lat_idx[t] + 1, lon_idx[t]]
                     - ds.variables['RH'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
 
-            profiles['A_RH_h'][:, start:end] = profiles['U'][:, start:end] * dRHdx
-            + profiles['V'][:, start:end] * dRHdy
+            profiles['A_RH_h'][:, start:end] = -(profiles['U'][:, start:end] * dRHdx
+            + profiles['V'][:, start:end] * dRHdy)
             
-    if model == 'SAM':
-        profiles['A_QV_h'] *= 1e-3
+        with Dataset(filenames['PRES']) as ds:
+            if model == 'SAM':
+                pname = 'PP'
+            else:
+                pname = 'PRES'
+            dPdx = (ds.variables[pname][t][:, lat_idx[t], lon_idx_next]
+                    - ds.variables[pname][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
+            dPdy = (ds.variables[pname][t][:, lat_idx[t] + 1, lon_idx[t]]
+                    - ds.variables[pname][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+
+            dPdt = dPdx * profiles['U'][:, start:end] + dPdy * profiles['V'][:, start:end]
+            dTdP = - R * profiles['TEMP'][:, start:end] / cp / profiles['PRES'][:, start:end]
+
+            profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt 
 
     logger.info('Save results to files')
-    for var in ['A_QV_h', 'A_RH_h', 'U', 'V']:
+    for var in ['A_QV_v', 'A_RH_v', 'DRH_Dt_v', 'A_QV_h', 'A_RH_h', 'DRH_Dt_h', 'U', 'V']:
         profiles_sorted = profiles[var][:, sort_idx]
         nctools.array2D_to_netCDF(
-                    profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
+            profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
                 )
     
 def advection_for_random_profiles_RH(model, run, time_period, num_samples, data_dir, **kwargs):
@@ -1137,7 +1177,7 @@ def advection_for_random_profiles_RH(model, run, time_period, num_samples, data_
         #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
 
     logger.info('Read Variables from files')
-    for var in ['U', 'V', 'TEMP', 'PRES', 'QV', 'RH']:
+    for var in ['U', 'V', 'W', 'TEMP', 'PRES', 'QV', 'RH']:
         logger.info(var)
         for t in range(num_timesteps):
             start = t * num_samples_timestep
@@ -1151,13 +1191,14 @@ def advection_for_random_profiles_RH(model, run, time_period, num_samples, data_
                     profiles[var][:, start:end] = ds.variables[var][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
     if model == 'SAM':
         profiles['QV'] *= 1e-3
+    
+    
 
     profiles['VMR'] = typhon.physics.specific_humidity2vmr(profiles['QV'])
-
     R = typhon.constants.gas_constant_water_vapor
     cp = typhon.constants.isobaric_mass_heat_capacity
     L = typhon.constants.heat_of_vaporization
-    logger.info('Read QV and RH from files and calculate advection')
+    logger.info('Read QV and RH from files and calculate horizontal advection')
     for t in range(num_timesteps):
         print(t)
         start = t * num_samples_timestep
@@ -1179,13 +1220,11 @@ def advection_for_random_profiles_RH(model, run, time_period, num_samples, data_
 
             dPdt = dPdx * profiles['U'][:, start:end] + dPdy * profiles['V'][:, start:end]
             dTdP = - R * profiles['TEMP'][:, start:end] / cp / profiles['PRES'][:, start:end]
-            #(profiles['TEMP'][:, start:end] * (((profiles['PRES'][:, start:end] + dPdt) / profiles['PRES'][:, start:end]) ** (R/cp) - 1)) / dPdt
 
             profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt 
-            #(L / R / profiles['TEMP'][:, start:end] ** 2 * dTdP - profiles['RH'][:, start:end] * profiles['VMR'][:, start:end]) * dPdt
 
     logger.info('Save results to files')
-    for var in ['DRH_Dt_h']:
+    for var in ['A_QV_v', 'A_QV_h', 'A_RH_v', 'A_RH_h', 'DRH_Dt_v', 'DRH_Dt_h']:
         profiles_sorted = profiles[var][:, sort_idx]
         nctools.array2D_to_netCDF(
                     profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
