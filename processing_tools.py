@@ -1062,6 +1062,134 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
                     profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
                 )
     
+def advection_for_random_profiles_RH(model, run, time_period, num_samples, data_dir, **kwargs):
+    time = pd.date_range(time_period[0], time_period[1], freq='1D')
+    start_date = time[0].strftime("%m%d")
+    end_date = time[-1].strftime("%m%d")
+    logger.info('Input and output variables and filenames')
+    input_variables = ['U', 'V', 'QV', 'RH', 'TEMP', 'PRES']
+    output_variables = ['DRH_Dt_h']
+    if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS']:
+        filename = '{}-{}_{}_hinterp_vinterp_merged_{}-{}.nc'
+    else:
+        filename = '{}-{}_{}_hinterp_merged_{}-{}.nc'
+    filename_out = '{}-{}_{}_sample_{}_{}-{}.nc'
+    filename_lat_idx = filename_out.format(model, run, 'ind_lat', num_samples, start_date, end_date)
+    filename_lat_idx = os.path.join(data_dir, model, 'random_samples', filename_lat_idx)
+    filename_lon_idx = filename_out.format(model, run, 'ind_lon', num_samples, start_date, end_date)
+    filename_lon_idx = os.path.join(data_dir, model, 'random_samples', filename_lon_idx)
+    filename_sort_idx = filename_out.format(model, run, 'sort_ind', num_samples, start_date, end_date)
+    filename_sort_idx = os.path.join(data_dir, model, 'random_samples', filename_sort_idx)
+    testfile = os.path.join(data_dir, model, filename.format(model, run, input_variables[0], start_date, end_date))
+    heightfile = filelists.get_path2targetheightfile(model, data_dir)
+    filenames = {}
+    outnames = {}
+    for var in input_variables:
+        filenames[var] = os.path.join(data_dir, model,
+                                      filename.format(model, run, var, start_date, end_date)
+                                     )
+    for var in output_variables:
+        outnames[var] = os.path.join(data_dir, model, 'random_samples',
+                                     filename_out.format(model, run, var, num_samples, start_date, end_date)
+                                     )
+
+    logger.info('Read lats and lons')
+    with Dataset(testfile) as ds:
+        lat = ds.variables['lat'][:]
+        lon = ds.variables['lon'][:]
+        num_levels = ds.variables[input_variables[0]].shape[1]
+
+    with Dataset(heightfile) as ds:
+        height = ds.variables['target_height'][:]
+
+    logger.info('Read indices from files')
+    with Dataset(filename_sort_idx) as ds:
+        sort_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
+
+    with Dataset(filename_lat_idx) as ds:
+        lat_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
+
+    with Dataset(filename_lon_idx) as ds:
+        lon_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
+
+    num_timesteps = lon_idx.shape[0]
+    num_samples_timestep = lon_idx.shape[1]
+    num_samples_tot = num_samples_timestep * num_timesteps
+
+    profiles = {}
+    profiles['lat'] = np.ones((num_samples_tot)) * np.nan
+
+    logger.info('Read latitudes from file')
+    for t in range(num_timesteps):
+        start = t * num_samples_timestep
+        end = start + num_samples_timestep
+        profiles['lat'][start:end] = lat[lat_idx[t]]
+
+    logger.info('Calculate distance to next grid points')
+    dx = 0.1
+    dy = 0.1
+    profiles['dx'] = 111000 * dx * np.cos(np.deg2rad(profiles['lat']))
+    profiles['dy'] = 111000 * dy        
+
+    logger.info('Allocate array for selected profiles')
+    for var in ['U', 'V', 'TEMP', 'PRES', 'RH', 'QV', 'DRH_Dt_h']:
+        profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
+        #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
+
+    logger.info('Read Variables from files')
+    for var in ['U', 'V', 'TEMP', 'PRES', 'QV', 'RH']:
+        logger.info(var)
+        for t in range(num_timesteps):
+            start = t * num_samples_timestep
+            end = start + num_samples_timestep
+            with Dataset(filenames[var]) as ds:
+                if model == 'SAM' and var == 'PRES':
+                    pres_mean = np.expand_dims(ds.variables['p'][:], 1) * 1e2
+                    pres_pert = ds.variables['PP'][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
+                    profiles[var][:, start:end] = pres_mean + pres_pert
+                else:
+                    profiles[var][:, start:end] = ds.variables[var][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
+    if model == 'SAM':
+        profiles['QV'] *= 1e-3
+
+    profiles['VMR'] = typhon.physics.specific_humidity2vmr(profiles['QV'])
+
+    R = typhon.constants.gas_constant_water_vapor
+    cp = typhon.constants.isobaric_mass_heat_capacity
+    L = typhon.constants.heat_of_vaporization
+    logger.info('Read QV and RH from files and calculate advection')
+    for t in range(num_timesteps):
+        print(t)
+        start = t * num_samples_timestep
+        end = start + num_samples_timestep
+        lon_idx_next = lon_idx[t] + 1
+        lon_idx_next[lon_idx_next == len(lon)] = 0
+        lon_idx_before = lon_idx[t] - 1
+        lon_idx_before[lon_idx_before < 0] = len(lon) - 1
+
+        with Dataset(filenames['PRES']) as ds:
+            if model == 'SAM':
+                pname = 'PP'
+            else:
+                pname = 'PRES'
+            dPdx = (ds.variables[pname][t][:, lat_idx[t], lon_idx_next]
+                    - ds.variables[pname][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
+            dPdy = (ds.variables[pname][t][:, lat_idx[t] + 1, lon_idx[t]]
+                    - ds.variables[pname][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+
+            dPdt = dPdx * profiles['U'][:, start:end] + dPdy * profiles['V'][:, start:end]
+            dTdP = - R * profiles['TEMP'][:, start:end] / cp / profiles['PRES'][:, start:end]
+            #(profiles['TEMP'][:, start:end] * (((profiles['PRES'][:, start:end] + dPdt) / profiles['PRES'][:, start:end]) ** (R/cp) - 1)) / dPdt
+
+            profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt 
+            #(L / R / profiles['TEMP'][:, start:end] ** 2 * dTdP - profiles['RH'][:, start:end] * profiles['VMR'][:, start:end]) * dPdt
+
+    logger.info('Save results to files')
+    for var in ['DRH_Dt_h']:
+        profiles_sorted = profiles[var][:, sort_idx]
+        nctools.array2D_to_netCDF(
+                    profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
+                )
     
 def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
@@ -1080,7 +1208,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt', 'A_RH_h', 'A_QV_h', 'U', 'V']
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt', 'DRH_Dt_h', 'A_RH_h', 'A_QV_h', 'U', 'V']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
     extra_variables = ['A_QV', 'A_RH', 'DRH_Dt']
     datapath = f'{data_dir}/{model}/random_samples/'
@@ -1124,10 +1252,8 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
         profiles_sorted['DRH_Dt'] = utils.drh_dt(
             profiles_sorted['TEMP'], 
             profiles_sorted['PRES'], 
-            profiles_sorted['QV'],
             profiles_sorted['RH'],
-            profiles_sorted['W'],
-            height   
+            profiles_sorted['W']  
         )
     # RH advection
     if 'A_RH' in extra_variables:
@@ -1160,10 +1286,16 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     # create mask to exclude profiles with unrealistic advection values
     tropo = np.where(height < 20000)
     if 'A_QV_h' in variables:
-        wrong_mask = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -1e-5, axis=0),
+        wrong_mask_1 = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -1e-5, axis=0),
                                   np.any(profiles_sorted['A_QV_h'][tropo] > 1e-5, axis=0))
 
-        nan_mask = np.logical_or(nan_mask, wrong_mask).astype(int)
+        nan_mask = np.logical_or(nan_mask, wrong_mask_1).astype(int)
+        
+    if 'DRH_Dt_h' in variables:
+        wrong_mask_2 = np.logical_or(np.any(profiles_sorted['DRH_Dt_h'][tropo] < -0.001, axis=0), 
+                                     np.any(profiles_sorted['DRH_Dt_h'][tropo] > 0.001, axis=0))
+    
+    nan_mask = np.logical_or(nan_mask, wrong_mask_2).astype(int)
     
     # set masked profiles to nan
     for var in variables+['lon', 'lat']+extra_variables:
@@ -1337,10 +1469,16 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     # create mask to exclude profiles with unrealistic advection values
     tropo = np.where(height < 20000)
     if 'A_QV_h' in variables:
-        wrong_mask = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -1e-5, axis=0),
+        wrong_mask_1 = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -1e-5, axis=0),
                                   np.any(profiles_sorted['A_QV_h'][tropo] > 1e-5, axis=0))
 
-        nan_mask = np.logical_or(nan_mask, wrong_mask).astype(int)
+        nan_mask = np.logical_or(nan_mask, wrong_mask_1).astype(int)
+        
+    if 'DRH_Dt_h' in variables:
+        wrong_mask_2 = np.logical_or(np.any(profiles_sorted['DRH_Dt_h'][tropo] < -0.001, axis=0),
+                                  np.any(profiles_sorted['DRH_Dt_h'][tropo] > 0.001, axis=0))
+
+        nan_mask = np.logical_or(nan_mask, wrong_mask_2).astype(int)
     
     # set masked profiles to nan
     for var in variables+['lon', 'lat']+extra_variables:
