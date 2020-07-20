@@ -129,6 +129,8 @@ def get_modelspecific_varnames(model):
             'ICI': 'atmosphere_mass_content_of_cloud_ice',
             'QC': 'mass_fraction_of_cloud_liquid_water_in_air',
             'W': 'upward_air_velocity',
+            'U': 'eastward_wind',
+            'V': 'northward_wind',
             'SDTOA': 'toa_incoming_shortwave_flux',
             'SUTOA': 'toa_outgoing_shortwave_flux',
             'STOA': 'STOA', 
@@ -146,6 +148,8 @@ def get_modelspecific_varnames(model):
             'OLR': 'flut',
             'H': 'H',
             'W': 'w',
+            'U': 'u',
+            'V': 'v',
             'QC': 'ql',
             'SDTOA': 'fsdt',
             'SUTOA': 'fsut',
@@ -163,8 +167,8 @@ def get_modelspecific_varnames(model):
             'IWV': 'vert_int_qv',
             'OLR': 'aclwnett',
             'W': 'w',
-            'U': '',
-            'V': '',
+            'U': 'uReconstructZonal',
+            'V': 'uReconstructMeridional',
             'QC': 'qc',
             'STOA': 'acswnett',
             'OMEGA': '-'
@@ -292,6 +296,7 @@ def get_path2weights(model, run, grid_res, **kwargs):
     
     elif model == 'UM':
         if run == '5.0km':
+            #grid_dir = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/UM'
             weights = 'UM-5km_0.10_grid_wghts.nc'
         else:
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km".')
@@ -686,6 +691,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OLR': 'rlut',
                 'QC': 'clw',
                 'W': 'wa',
+                'U': 'ua',
+                'V': 'va-NEW',
                 'SDTOA': 'rsdt',
                 'SUTOA': 'rsut',
                 'STOA': '-',
@@ -698,7 +705,10 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 varname = varnames[var]
                 for i in np.arange(time.size):
                     date_str = time[i].strftime('%Y%m%d')
-                    varstr = var2dirname[var]
+                    if var == 'V':
+                        varstr = 'va'
+                    else: 
+                        varstr = var2dirname[var]
 
                     if var == 'IWV':
                         opt = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12'
@@ -710,7 +720,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         opt = f'-chname,{varname},{var} -selvar,{varname}'
                         day_file = f'{varstr}_3hr_HadGEM3-GA71_N2560_{date_str}.nc'
 
-                    day_file = os.path.join(stem, varstr, day_file)
+                    day_file = os.path.join(stem, var2dirname[var], day_file)
 
                     date_str = time[i].strftime('%m%d')
                     out_file = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
@@ -1085,7 +1095,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         models_list.append('ERA5')
                                 
         elif model == 'MPAS':
-            stem = '/work/ka1081/DYAMOND/MPAS-3.75km'
+            #stem = '/work/ka1081/DYAMOND/MPAS-3.75km'
+            stem = '/mnt/lustre02/work/bk1040/DYAMOND_SWAP/MPAS-3.75km'
             var2filename = {
                 'TEMP': 'history',
                 'PRES': 'history',
