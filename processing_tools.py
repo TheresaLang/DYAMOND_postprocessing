@@ -1083,8 +1083,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             dQdy = (ds.variables['QV'][t][:, lat_idx[t] + 1, lon_idx[t]]
                     - ds.variables['QV'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
 
-            profiles['A_QV_h'][:, start:end] = -(profiles['U'][:, start:end] * dQdx
-            + profiles['V'][:, start:end] * dQdy)
+            profiles['A_QV_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQdx + profiles['V'][:, start:end] * dQdy)
 
         with Dataset(filenames['RH']) as ds:
             dRHdx = (ds.variables['RH'][t][:, lat_idx[t], lon_idx_next]
@@ -1092,8 +1091,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             dRHdy = (ds.variables['RH'][t][:, lat_idx[t] + 1, lon_idx[t]]
                     - ds.variables['RH'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
 
-            profiles['A_RH_h'][:, start:end] = -(profiles['U'][:, start:end] * dRHdx
-            + profiles['V'][:, start:end] * dRHdy)
+            profiles['A_RH_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dRHdx + profiles['V'][:, start:end] * dRHdy)
             
         with Dataset(filenames['PRES']) as ds:
             if model == 'SAM':
@@ -1230,23 +1228,8 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
     num_profiles = len(profiles_sorted[var])
             
-    logger.info('Calc additional variables: IWP, H_tropo and T_QV')
+    logger.info('Calc additional variables: IWP, H_tropo etc.')
     # RH tendency 
-    if 'DRH_Dt' in extra_variables:
-        logger.info('DRH_Dt')
-        profiles_sorted['DRH_Dt'] = utils.drh_dt(
-            profiles_sorted['TEMP'], 
-            profiles_sorted['PRES'], 
-            profiles_sorted['RH'],
-            profiles_sorted['W']  
-        )
-    # RH advection
-    if 'A_RH' in extra_variables:
-        profiles_sorted['A_RH'] = -profiles_sorted['W'] * np.gradient(profiles_sorted['RH'], height, axis=0)
-
-    # spec. hum. advection
-    if 'A_QV' in extra_variables:
-        profiles_sorted['A_QV'] = -profiles_sorted['W'] * np.gradient(profiles_sorted['QV'], height, axis=0)
     
     if 'IWP' in extra_variables:
         profiles_sorted['IWP'] = utils.calc_IWP(
@@ -1396,7 +1379,7 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'T_QV', 'U', 'V', 'A_RH_h', 'A_QV_h']
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
     datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
