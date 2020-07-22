@@ -1696,7 +1696,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
     """  
     #model = models[0]
     #run = runs[0]
-    variables_2D = ['OLR', 'OLRC', 'STOA', 'STOAC', 'IWV']
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'STOAC', 'IWV', 'CRH']
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date_in = time[0].strftime("%m%d")
     end_date_in = time[-1].strftime("%m%d")
@@ -1740,7 +1740,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
             file = os.path.join(data_dir, model, file)
             infile_sublist.append(file) 
 
-        for var in variables + ['IWV', 'lon', 'lat', 'ind_lon', 'ind_lat', 'sort_ind']:
+        for var in variables + ['IWV', 'CRH', 'lon', 'lat', 'ind_lon', 'ind_lat', 'sort_ind']:
             outfile = f'{model}-{run}_{var}_sample_{num_samples_tot}_{start_date_out}-{end_date_out}{sample_day_str}{latlonstr}{expstr}.nc'
             outfile = os.path.join(data_dir, model, 'random_samples', outfile)
             outfile_sublist.append(outfile)
