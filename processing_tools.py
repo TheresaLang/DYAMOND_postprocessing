@@ -1253,9 +1253,13 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     nan_mask = np.isnan(profiles_sorted['lon'])
     # create mask to exclude profiles with unrealistic advection values
     tropo = np.where(height < 20000)
+    if model == 'SAM':
+        thres_a_qv = 4e-3
+    else:
+        thres_a_qv = 3e-5
     if 'A_QV_h' in variables:
-        wrong_mask_1 = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -1e-5, axis=0),
-                                  np.any(profiles_sorted['A_QV_h'][tropo] > 1e-5, axis=0))
+        wrong_mask_1 = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -thres_a_qv, axis=0),
+                                  np.any(profiles_sorted['A_QV_h'][tropo] > thres_a_qv, axis=0))
 
         nan_mask = np.logical_or(nan_mask, wrong_mask_1).astype(int)
         
@@ -1263,7 +1267,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
         wrong_mask_2 = np.logical_or(np.any(profiles_sorted['DRH_Dt_h'][tropo] < -0.001, axis=0), 
                                      np.any(profiles_sorted['DRH_Dt_h'][tropo] > 0.001, axis=0))
     
-    nan_mask = np.logical_or(nan_mask, wrong_mask_2).astype(int)
+        nan_mask = np.logical_or(nan_mask, wrong_mask_2).astype(int)
     
     # set masked profiles to nan
     for var in variables+['lon', 'lat']+extra_variables:
