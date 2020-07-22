@@ -765,7 +765,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     
     logger.info(model)
     logger.info('Config')
-    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'lat', 'lon', 'timestep']
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'lat', 'lon', 'timestep']
     test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
     test_var = variables[test_ind]
     test_filename = infiles[test_ind]
@@ -908,11 +908,25 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         if model == 'SAM' and var in ['QV', 'QI', 'QC']:
             profiles[var] *= 1e-3
             
-    logger.info('Calculate IWV and sort')
+    logger.info('Calculate IWV and CRH')
     # calculate IWV
     profiles['IWV'] = utils.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)
     # get indices to sort by IWV
     IWV_sort_idx = np.argsort(profiles['IWV'])
+    
+    profiles['QV_sat'] = utils.rel_hum2spec_hum(
+        np.ones(profiles['TEMP'].shape), 
+        profiles['TEMP'], 
+        profiles['PRES'], 
+        phase='mixed'
+    )
+    profiles['IWV_sat'] = utils.calc_IWV(
+        profiles['QV_sat'],
+        profiles['TEMP'],
+        profiles['PRES'],
+        height
+    )
+    profiles['CRH'] = profiles_sorted[exp]['IWV'] / profiles_sorted[exp]['IWV_sat']
     
     # save indices
     nctools.vector_to_netCDF(
@@ -920,7 +934,8 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             )
             
     # sort by IWV and save output
-    for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
+    logger.info('Save to files')
+    for i, var in enumerate(variables + ['IWV', 'CRH', 'lon', 'lat']):
         if var in variables_2D:
             profiles_sorted[var] = profiles[var][IWV_sort_idx]
             nctools.vector_to_netCDF(
