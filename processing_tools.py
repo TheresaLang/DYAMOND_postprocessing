@@ -46,10 +46,11 @@ def preprocess(model, infile, tempfile, outfile, option_1, option_2, numthreads,
         preprocess_IFS(infile, tempfile, outfile, option_1, option_2, numthreads)
     elif model == 'MPAS':
         preprocess_MPAS(infile, tempfile, outfile, option_1, numthreads)
+    elif model == 'FV3':
+        preprocess_FV3(infile, outfile, option_1, numthreads)
     elif model == 'ERA5':
         preprocess_ERA5(infile, outfile, option_1, option_2, numthreads)
         
-    
 def preprocess_IFS(infile, tempfile, outfile, option_selvar, option_nzlevs, numthreads, **kwargs):
     """ Perform processing steps required before horizontal interpolation for the IFS model.
     
@@ -125,6 +126,19 @@ def preprocess_MPAS(infile, tempfile, outfile, option_selvar, numthreads, **kwar
     os.system(cmd_2)
     logger.info(cmd_3)
     os.system(cmd_3)
+    
+def preprocess_FV3(infiles, outfile, option_gridspec, numthreads, **kwargs):
+    """ Perform preprocessing steps for FV3: Combine 6 subtiles of the grid (only needed for variables U and V)
+    
+    Parameters: 
+        infiles (str): Name of input files
+        outfile (str): Name of output file
+        numthreads (int): Number of OpenMP threads for cdo
+    """
+    cmd = f'cdo -P {numthreads} -setgrid,{option_gridspec} -collgrid,gridtype=unstructured {infiles} {outfile}'
+    
+    logger.info(cmd)
+    os.system(cmd)
     
 def preprocess_ERA5(infile, outfile, option_grid, option_splitday, numthreads, **kwargs):
     """ Perform processing steps required before horizontal interpolation for the ERA5 reanalysis.
@@ -1166,8 +1180,8 @@ def estimate_condensation_for_random_profiles(model, run, time_period, num_sampl
 
     r_evap = utils.spec_hum2rel_hum(q_tot, profiles['TEMP'], profiles['PRES'], phase='mixed')# RH after evaporating all condensate 
 
-    ce_tendency[ind_cond] = profiles['RH'][ind_cond] - r_new[ind_cond] # change np.ones(r_new.shape)[ind_cond] to profiles['RH'][ind_cond], because the RH might have been > 1 before
-    ce_tendency[ind_evap] = np.minimum(r_evap[ind_evap], np.ones(r_new.shape)[ind_evap]) - profiles['RH'][ind_evap]
+    ce_tendency[ind_cond] = profiles['RH'][ind_cond] - r_new[ind_cond] # where r_new > 0, condensation occurs
+    ce_tendency[ind_evap] = np.minimum(r_evap[ind_evap], np.ones(profiles['RH'].shape)) - r_new[ind_evap] # where r_new <0, all condensate can evaporate until r=100%. Produces much too high values!
 
     logger.info('Save tendency to file.')
     nctools.array2D_to_netCDF(
