@@ -1095,8 +1095,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         models_list.append('ERA5')
                                 
         elif model == 'MPAS':
-            #stem = '/work/ka1081/DYAMOND/MPAS-3.75km'
-            stem = '/mnt/lustre02/work/bk1040/DYAMOND_SWAP/MPAS-3.75km'
+            stem = '/work/ka1081/DYAMOND/MPAS-3.75km'
+            #stem = '/mnt/lustre02/work/bk1040/DYAMOND_SWAP/MPAS-3.75km'
             var2filename = {
                 'TEMP': 'history',
                 'PRES': 'history',
@@ -1132,6 +1132,33 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         option_1_list.append(option_selvar)
                         option_2_list.append('')
                         models_list.append('MPAS')
+                        
+        # only needed for variables U and V
+        elif model == 'FV3':
+            stem = '/work/ka1081/DYAMOND/FV3-3.25km'
+            target_time_3h = pd.date_range(time_period[0]+' 3:00:00', pd.Timestamp(time_period[1]+' 0:00:00')+pd.DateOffset(1), freq='3h')
+            time_3h = pd.date_range("2016-08-01 3:00:00", "2016-09-10 0:00:00", freq='3h')
+            dir_names = ['2016080100', '2016081100', '2016082100', '2016083100']
+            gridspec_file = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/FV3/FV3-3.25km_gridspec.nc'
+            
+            var2filename = {
+                'U': 'u',
+                'V': 'v'
+            }
+            
+            for var in variables:
+                for d in dir_names:
+                    models_list.append(model)
+                    varname = var2filename[var]
+                    infile = os.path.join(stem, d, f'{varname}_3h.tile?.nc')
+                    outfile = os.path.join(temp_dir, d, f'{varname}_3h.nc')
+
+                    infile_list.append(infile)
+                    tempfile_list.append('')
+                    outfile_list.append(outfile)
+                    option_1_list.append(gridspec_file)
+                    option_2_list.append('')
+            
 #        else:
 #            logger.error('The model specified for preprocessing does not exist or has not been implemented yet.')
         
