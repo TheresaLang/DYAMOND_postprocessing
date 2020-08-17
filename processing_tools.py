@@ -960,6 +960,206 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
             nctools.array2D_to_netCDF(
                 profiles_sorted[var], var, '', (height, range(num_samples_timestep * num_timesteps)), ('height', 'profile_index'), outfiles[i], overwrite=True
             )
+            
+def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfiles, heightfile, landmaskfile,\
+                               variables, lonlatbox, vinterp, data_dir, sample_days, timesteps=None, **kwargs):
+    """ Selects a subset of random profiles from (horizontally interpolated) model fields only from longitude regions with a local time corresponding to the cloudsat overpass time, sorts them by their integrated water vapor and saves them.
+    
+    Parameters:
+        model (str): name of model
+        run (str): name of model run
+        num_samples_tot (int): Total number of profiles to select
+        infiles (list of str): List of names of input files (each file contains one variable)
+        outfiles (list of str): List of names for output files
+        heightfile (str): Full path to file containing height vector
+        landmaskfile (str): Full path to file containing land mask
+        variables (list of str): names of variables (same order as in infiles!!)
+        lonlatbox (list of floats): Boundaries of lon-lat box to select [lonmin, lonmax, latmin, latmax]
+        vinterp (boolean): True, if data is already interpolated vertically 
+        data_dir (str): Path to output directory
+        timesteps (1darray or None): Either a 1darray containing timesteps to use or None 
+            (all timesteps are used; default)
+    """
+    
+    logger.info(model)
+    logger.info('Config')
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'lat', 'lon', 'timestep']
+    test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
+    test_var = variables[test_ind]
+    test_filename = infiles[test_ind]
+    time_delta = pd.Timedelta(hours=2)
+
+    logger.info('Get dimensions')
+    # height
+    height = atools.read_var(heightfile, model, 'target_height')
+    num_levels = height.shape[0]
+    if height[0] < height[-1]:
+        surface = 0
+    else:
+        surface = -1
+    if model == 'GEOS':
+        surface = -2
+
+    print(surface)
+
+    # timesteps
+    logger.info('Timesteps')
+    if timesteps is not None:
+        time_array = get_time_array(model)[timesteps]
+        num_timesteps = len(timesteps)
+    else:
+        time_array = get_time_array(model)
+        timesteps = np.arange(len(time_array))
+        num_timesteps = len(timesteps)
+    num_samples_timestep = int(num_samples_tot / num_timesteps)
+
+    logger.info('Read lats/lons from file')
+    # lon, lat
+    with Dataset(test_filename) as ds:
+        dimensions = ds.variables[test_var].shape
+        test_field = ds.variables[test_var][0].filled(np.nan)
+        lat = ds.variables['lat'][:].filled(np.nan)
+        lon = ds.variables['lon'][:].filled(np.nan)
+
+    lon_reg_ind = np.where(np.logical_and(lon >= lonlatbox[0], lon <= lonlatbox[1]))[0]
+    lon_reg = lon[lon_reg_ind]
+    lat_reg_ind = np.where(np.logical_and(lat >= lonlatbox[2], lat <= lonlatbox[3]))[0]
+    lat_reg = lat[lat_reg_ind]
+
+    def lst(utc, lon):
+        timediff = pd.Timedelta(hours=np.deg2rad(lon)/np.pi*12)
+        return (utc + timediff).hour
+    vlst = np.vectorize(lst)
+    lst = np.empty((num_timesteps, len(lat_reg), len(lon_reg)), dtype=pd.Timestamp)
+    lst_mask = []
+
+    for t in range(num_timesteps):
+        lst_lon = vlst(time_array[t], lon_reg)
+        lst[t] = np.repeat(lst_lon[np.newaxis, :], len(lat_reg), axis=0)
+        # Gitterzellen mit lsts, diezur CloudSat overpass time passen
+        lst_mask.append(np.logical_or(np.logical_and(0 <= lst[t], lst[t] <= 3), np.logical_and(12 <= lst[t], lst[t] <= 15)))
+
+
+    logger.info('NaN mask')
+    nan_mask = []
+    if model == 'MPAS' and test_var in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
+        for t in range(num_timesteps):
+            nan_mask = np.logical_not(np.isnan(test_field[lat_reg_ind][:, lon_reg_ind][:, :, surface]))
+    else:
+        for t in range(num_timesteps):
+            nan_mask = np.logical_not(np.isnan(test_field[surface][lat_reg_ind][:, lon_reg_ind]))
+
+    logger.info('Ocean mask')
+    # get ocean_mask
+    ocean_mask = np.logical_not(
+        np.squeeze(atools.read_var(landmaskfile, model, 'land_mask'))
+    )
+
+    ocean_lon = atools.read_var(landmaskfile, model, 'lon')
+    ocean_lat = atools.read_var(landmaskfile, model, 'lat')
+    ocean_lat_ind = np.where(np.logical_and(ocean_lat >= lonlatbox[2], ocean_lat <= lonlatbox[3]))[0]
+    ocean_lon = atools.read_var(landmaskfile, model, 'lon')
+    ocean_lon_ind = np.where(np.logical_and(ocean_lon >= lonlatbox[0], ocean_lon <= lonlatbox[1]))[0]
+    ocean_mask = ocean_mask[ocean_lat_ind][:, ocean_lon_ind].astype(int)
+
+    logger.info('Total mask')
+    total_mask = []
+    lat_not_masked = []
+    lon_not_masked = []
+    for t in range(num_timesteps):
+        total_mask.append(np.where(np.logical_and(np.logical_and(ocean_mask, nan_mask), lst_mask[t])))
+        lat_not_masked.append(total_mask[t][0])
+        lon_not_masked.append(total_mask[t][1])
+
+    lat_inds = np.zeros((num_timesteps, num_samples_timestep)).astype(int)
+    lon_inds = np.zeros((num_timesteps, num_samples_timestep)).astype(int)
+
+    logger.info('Get indices')
+    for t in range(num_timesteps):
+        r = random.sample(list(zip(lat_not_masked[t], lon_not_masked[t])), num_samples_timestep)
+        lat_inds[t], lon_inds[t] = zip(*r)
+
+    profiles = {}
+    profiles_sorted = {}
+    #latlon = np.meshgrid(lat, lon)
+    profiles['lat'] = np.ones((num_samples_tot)) * np.nan
+    profiles['lon'] = np.ones((num_samples_tot)) * np.nan
+
+    # select lats, lons
+    for j, t in enumerate(timesteps):
+        start = j * num_samples_timestep
+        end = start + num_samples_timestep
+        profiles['lat'][start:end] = lat[lat_inds[j]]
+        profiles['lon'][start:end] = lon[lon_inds[j]]
+    #return profiles, ocean_mask, nan_mask, total_mask, lat_inds, lon_inds, num_timesteps, num_samples_timestep, lon, lat
+    logger.info('Read variables from files')
+    for i, var in enumerate(variables):
+        logger.info(var)
+        if var in variables_2D:
+            profiles[var] = np.ones((num_samples_tot)) * np.nan
+            profiles_sorted[var] = np.ones((num_samples_tot)) * np.nan
+            for j, t in enumerate(timesteps):
+                start = j * num_samples_timestep
+                end = start + num_samples_timestep
+                with Dataset(infiles[i]) as ds:
+                    if model == 'NICAM':
+                        profiles[var][start:end] = ds.variables[var][t][0, lat_inds[j], lon_inds[j]].filled(np.nan)
+                    else:
+                        profiles[var][start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j]].filled(np.nan)
+        else:
+            profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
+            profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
+            for j, t in enumerate(timesteps):
+                start = j * num_samples_timestep
+                end = start + num_samples_timestep
+                with Dataset(infiles[i]) as ds:
+                    if model == 'MPAS' and var in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
+                        profiles[var][:, start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j], :].filled(np.nan).transpose([1, 0])
+                    else:
+                        if model == 'SAM' and var == 'PRES':
+                            pres_mean = np.expand_dims(ds.variables['p'][:], 1) * 1e2
+                            pres_pert = ds.variables['PP'][t][:, lat_inds[j], lon_inds[j]].filled(np.nan)
+                            profiles[var][:, start:end] = pres_mean + pres_pert
+                            print(profiles[var][:, start:end])
+                        else:
+                            profiles[var][:, start:end] = ds.variables[var][t][:, lat_inds[j], lon_inds[j]].filled(np.nan)
+
+        if model == 'SAM' and var in ['QV', 'QI', 'QC']:
+            profiles[var] *= 1e-3
+            
+    logger.info('Calculate IWV and CRH')
+    # calculate IWV
+    profiles['IWV'] = utils.calc_IWV(profiles['QV'], profiles['TEMP'], profiles['PRES'], height)
+    # get indices to sort by IWV
+    IWV_sort_idx = np.argsort(profiles['IWV'])
+    
+    profiles['QV_sat'] = utils.rel_hum2spec_hum(
+        np.ones(profiles['TEMP'].shape), 
+        profiles['TEMP'], 
+        profiles['PRES'], 
+        phase='mixed'
+    )
+    profiles['IWV_sat'] = utils.calc_IWV(
+        profiles['QV_sat'],
+        profiles['TEMP'],
+        profiles['PRES'],
+        height
+    )
+    profiles['CRH'] = profiles['IWV'] / profiles['IWV_sat']
+            
+    # sort by IWV and save output
+    logger.info('Save to files')
+    for i, var in enumerate(variables + ['IWV', 'CRH', 'lon', 'lat']):
+        if var in variables_2D:
+            profiles_sorted[var] = profiles[var][IWV_sort_idx]
+            nctools.vector_to_netCDF(
+                profiles_sorted[var], var, '', range(num_samples_timestep * num_timesteps), 'profile_index', outfiles[i], overwrite=True
+            )
+        else:
+            profiles_sorted[var] = profiles[var][:, IWV_sort_idx]
+            nctools.array2D_to_netCDF(
+                profiles_sorted[var], var, '', (height, range(num_samples_timestep * num_timesteps)), ('height', 'profile_index'), outfiles[i], overwrite=True
+            )
 
 def advection_for_random_profiles(model, run, time_period, num_samples, data_dir, **kwargs):
     """ Calculate vertical and horizontal advection of QV and RH for randomly selected profiles.
