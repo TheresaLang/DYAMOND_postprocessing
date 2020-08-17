@@ -1582,7 +1582,37 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
         pickle.dump(perc, outfile) 
     with open(os.path.join(datapath, outname_binned), 'wb' ) as outfile:
         pickle.dump(binned, outfile)
-        
+
+def get_time_array(model):
+    """ Return array containing time stamps for files containing the period 
+    2016-08-10 to 2016-09-10.
+    """
+    if model == 'ICON':
+        time_array = pd.date_range("2016-08-10 0:00:00", "2016-09-08 21:00:00", freq='3h')
+    elif model == 'NICAM':
+        time_array = pd.date_range("2016-08-10 3:00:00", "2016-09-09 0:00:00", freq='3h')
+    elif model == 'GEOS':
+        time_array = pd.date_range("2016-08-10 0:00:00", "2016-09-08 21:00:00", freq='3h')
+    elif model == 'SAM':
+        time_array = pd.date_range("2016-08-10 0:00:00", "2016-09-08 21:00:00", freq='3h')
+    elif model == 'UM':
+        time_array = pd.date_range("2016-08-10 3:00:00", "2016-09-09 0:00:00", freq='3h')
+    elif model == 'IFS':
+        time_array = pd.date_range("2016-08-10 0:00:00", "2016-09-08 21:00:00", freq='3h')
+    elif model == 'FV3':
+        time_array = pd.date_range("2016-08-10 3:00:00", "2016-09-09 0:00:00", freq='3h')
+    elif model == 'MPAS':
+        time_array = pd.date_range("2016-08-10 0:00:00", "2016-09-08 21:00:00", freq='3h')
+    elif model == 'ARPEGE':
+        time = pd.date_range("2016-08-10 0:00:00", "2016-09-08 21:00:00", freq='3h')
+        exclude_times = list(pd.date_range("2016-08-11 00:00:00", "2016-08-12 00:00:00", freq='3h'))
+        exclude_times.append(pd.to_datetime('2016-08-10 00:00:00'))
+        exclude_times.append(pd.to_datetime('2016-08-10 15:00:00'))
+        time_array = [t for t in time if t not in exclude_times]
+    elif model == 'ERA5':
+        time_array = pd.date_range("2016-08-10 0:00:00", "2016-09-08 21:00:00", freq='3h')
+         
+    return time_array
         
 def ocean_basin(lon, lat):
     """ Returns the ocean basin for given longitude and latitude in the tropics.
