@@ -719,7 +719,7 @@ def merge_timesteps(infiles, outfile, numthreads, **kwargs):
         numthreads (int): number of OpenMP threads for cdo
     """
     infiles_str = ' '.join(infiles)
-    cmd = f'cdo -O -P {numthreads} mergetime {infiles_str} {outfile}'
+    cmd = f'cdo --verbose -O -P {numthreads} mergetime {infiles_str} {outfile}'
     logger.info(cmd)
     os.system(cmd)
 
