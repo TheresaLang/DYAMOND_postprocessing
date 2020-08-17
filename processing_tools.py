@@ -810,7 +810,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     lon = lon[lon_reg_ind]
     
     logger.info('NaN mask')
-    if model == 'MPAS' and test_var in ['TEMP', 'PRES', 'QV', 'QI', 'QC']:
+    if model == 'MPAS' and test_var in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
         nan_mask = np.logical_not(np.isnan(test_field[lat_reg_ind][:, lon_reg_ind][:, :, surface]))
     else:
         nan_mask = np.logical_not(np.isnan(test_field[surface][lat_reg_ind][:, lon_reg_ind]))
@@ -908,7 +908,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                 start = j * num_samples_timestep
                 end = start + num_samples_timestep
                 with Dataset(infiles[i]) as ds:
-                    if model == 'MPAS' and var in ['TEMP', 'PRES', 'QV', 'QI', 'QC']:
+                    if model == 'MPAS' and var in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
                         profiles[var][:, start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j], :].filled(np.nan).transpose([1, 0])
                     else:
                         if model == 'SAM' and var == 'PRES':
@@ -940,7 +940,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         profiles['PRES'],
         height
     )
-    profiles['CRH'] = profiles_sorted[exp]['IWV'] / profiles_sorted[exp]['IWV_sat']
+    profiles['CRH'] = profiles['IWV'] / profiles['IWV_sat']
     
     # save indices
     nctools.vector_to_netCDF(
