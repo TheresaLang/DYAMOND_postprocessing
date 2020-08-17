@@ -1150,8 +1150,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 for d in dir_names:
                     models_list.append(model)
                     varname = var2filename[var]
-                    infile = os.path.join(stem, d, f'{varname}_3h.tile?.nc')
-                    outfile = os.path.join(temp_dir, d, f'{varname}_3h.nc')
+                    infile = os.path.join(stem, d, f'{varname}_3hr.tile?.nc')
+                    outfile = os.path.join(temp_dir, d, f'{varname}_3hr.nc')
 
                     infile_list.append(infile)
                     tempfile_list.append('')
