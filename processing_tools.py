@@ -1178,7 +1178,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
 
     logger.info('Input and output variables and filenames')
     input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES']
-    output_variables = ['U', 'V', 'A_QV_h', 'A_RH_h', 'A_QV_v', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v']
+    output_variables = ['U', 'V', 'A_QV_h', 'A_RH_h', 'A_QV_v', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v', 'DT_Dt_v', 'DT_Dt_h']
     if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS']:
         filename = '{}-{}_{}_hinterp_vinterp_merged_{}-{}.nc'
     else:
@@ -1251,7 +1251,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     profiles['dy'] = 111000 * dy        
 
     logger.info('Allocate array for selected profiles')
-    for var in ['U', 'V', 'W', 'PRES', 'TEMP', 'QV', 'RH', 'A_QV_v', 'A_RH_v', 'A_QV_h', 'A_RH_h', 'DRH_Dt_v', 'DRH_Dt_h']:
+    for var in ['U', 'V', 'W', 'PRES', 'TEMP', 'QV', 'RH', 'A_QV_v', 'A_RH_v', 'A_QV_h', 'A_RH_h', 'DRH_Dt_v', 'DRH_Dt_h', 'DT_Dt_v', 'DT_Dt_h']:
         profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
         #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
 
@@ -1283,6 +1283,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             profiles['RH'],
             profiles['W']  
         )
+    profiles['DT_Dt_h'] = profiles['W'] * np.gradient(profiles['T'], height, axis=0)
     
     logger.info('Read QV and RH from files and calculate horizontal transport terms')
     R = typhon.constants.gas_constant_water_vapor
@@ -1341,12 +1342,13 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             dTdP = - R * profiles['TEMP'][:, start:end] / cp / profiles['PRES'][:, start:end]
 
             profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt 
+            profiles['DT_Dt_h'][:, start:end] = dTdP * dPdt
 
     if model == 'SAM':
          profiles['A_QV_h'] *= 1e-3
             
     logger.info('Save results to files')
-    for var in ['A_QV_v', 'A_RH_v', 'DRH_Dt_v', 'A_QV_h', 'A_RH_h', 'DRH_Dt_h', 'U', 'V']:
+    for var in output_variables:
         profiles_sorted = profiles[var][:, sort_idx]
         nctools.array2D_to_netCDF(
             profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
