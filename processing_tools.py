@@ -1213,7 +1213,10 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     with Dataset(testfile) as ds:
         lat = ds.variables['lat'][:]
         lon = ds.variables['lon'][:]
-        num_levels = ds.variables[input_variables[0]].shape[1]
+        if model == 'MPAS':
+            num_levels = ds.variables[input_variables[0]].shape[3]
+        else:
+            num_levels = ds.variables[input_variables[0]].shape[1]
         
     with Dataset(heightfile) as ds:
         height = ds.variables['target_height'][:]
@@ -1252,8 +1255,8 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
         #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
 
-    logger.info('Read U and V from files')
-    for var in ['U', 'V', 'W', 'TEMP', 'PRES', 'QV', 'RH']:
+    logger.info('Read variables from files')
+    for var in input_variables:
         for t in range(num_timesteps):
             start = t * num_samples_timestep
             end = start + num_samples_timestep
@@ -1262,6 +1265,8 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
                     pres_mean = np.expand_dims(ds.variables['p'][:], 1) * 1e2
                     pres_pert = ds.variables['PP'][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
                     profiles[var][:, start:end] = pres_mean + pres_pert
+                elif model == 'MPAS' and var in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
+                    profiles[var][:, start:end] = ds.variables[var][t][lat_idx[t], lon_idx[t], :].filled(np.nan).T
                 else:
                     profiles[var][:, start:end] = ds.variables[var][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
     if model == 'SAM':
@@ -1292,10 +1297,17 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         lon_idx_before = lon_idx[t] - 1
         lon_idx_before[lon_idx_before < 0] = len(lon) - 1
         with Dataset(filenames['QV']) as ds:
-            dQdx = (ds.variables['QV'][t][:, lat_idx[t], lon_idx_next]
-                    - ds.variables['QV'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
-            dQdy = (ds.variables['QV'][t][:, lat_idx[t] + 1, lon_idx[t]]
-                    - ds.variables['QV'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+            if model == 'MPAS':
+                dQdx = (ds.variables['QV'][t][lat_idx[t], lon_idx_next, :]
+                        - ds.variables['QV'][t][lat_idx[t], lon_idx_before, :]).T / profiles['dx'][start:end]
+                dQdy = (ds.variables['QV'][t][lat_idx[t] + 1, lon_idx[t], :]
+                        - ds.variables['QV'][t][lat_idx[t] - 1, lon_idx[t], :]).T / profiles['dy']
+                
+            else:
+                dQdx = (ds.variables['QV'][t][:, lat_idx[t], lon_idx_next]
+                        - ds.variables['QV'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
+                dQdy = (ds.variables['QV'][t][:, lat_idx[t] + 1, lon_idx[t]]
+                        - ds.variables['QV'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
 
             profiles['A_QV_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQdx + profiles['V'][:, start:end] * dQdy)
 
@@ -1312,10 +1324,18 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
                 pname = 'PP'
             else:
                 pname = 'PRES'
-            dPdx = (ds.variables[pname][t][:, lat_idx[t], lon_idx_next]
-                    - ds.variables[pname][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
-            dPdy = (ds.variables[pname][t][:, lat_idx[t] + 1, lon_idx[t]]
-                    - ds.variables[pname][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+                
+            if model == 'MPAS':
+                dPdx = (ds.variables[pname][t][lat_idx[t], lon_idx_next, :]
+                        - ds.variables[pname][t][lat_idx[t], lon_idx_before, :]).T / profiles['dx'][start:end]
+                dPdy = (ds.variables[pname][t][lat_idx[t] + 1, lon_idx[t], :]
+                        - ds.variables[pname][t][lat_idx[t] - 1, lon_idx[t], :]).T / profiles['dy']
+
+            else:
+                dPdx = (ds.variables[pname][t][:, lat_idx[t], lon_idx_next]
+                        - ds.variables[pname][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
+                dPdy = (ds.variables[pname][t][:, lat_idx[t] + 1, lon_idx[t]]
+                        - ds.variables[pname][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
 
             dPdt = dPdx * profiles['U'][:, start:end] + dPdy * profiles['V'][:, start:end]
             dTdP = - R * profiles['TEMP'][:, start:end] / cp / profiles['PRES'][:, start:end]
