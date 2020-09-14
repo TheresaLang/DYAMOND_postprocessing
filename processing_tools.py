@@ -779,7 +779,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     
     logger.info(model)
     logger.info('Config')
-    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'lat', 'lon', 'timestep']
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR', 'lat', 'lon', 'timestep']
     test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
     test_var = variables[test_ind]
     test_filename = infiles[test_ind]
@@ -1427,9 +1427,9 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V']
-    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
-    extra_variables = []
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'QS', 'QG', 'QR', 'RH', 'W', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V', 'UV', 'dRH_dx', 'dRH_dy', 'dRH_dz']
+    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR']
+    extra_variables = ['UV', 'dRH_dz']
     datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
     perc_values = np.arange(2., 100.5, 2.0)
@@ -1619,8 +1619,8 @@ def average_random_profiles_per_basin(model, run, time_period, variables, num_sa
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V']
-    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP']
+    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'QR', 'QS', 'QG', 'RH', 'W', 'A_QV', 'A_RH', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V']
+    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR']
     datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
     perc_values = np.arange(2, 100.5, 2.0)
