@@ -983,7 +983,7 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
     
     logger.info(model)
     logger.info('Config')
-    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'lat', 'lon', 'timestep']
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'TQI', 'TQC', 'TQR', 'TQS', 'TQG', 'lat', 'lon', 'timestep']
     test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
     test_var = variables[test_ind]
     test_filename = infiles[test_ind]
