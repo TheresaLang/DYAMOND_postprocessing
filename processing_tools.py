@@ -1272,7 +1272,13 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     if model == 'SAM':
         profiles['QV'] *= 1e-3
 
-    profiles['VMR'] = typhon.physics.specific_humidity2vmr(profiles['QV'])
+    if 'QC' in input_variables:
+        logger.info('Set condensate to zero in unsaturated cases')
+        unsat = profiles['RH'] < 1
+        profiles['QC'][unsat] = 0.
+        profiles['QI'][unsat] = 0.
+        profiles['A_QC_v'] = -profiles['W'] * np.gradient(profiles['QC'], height, axis=0)
+        profiles['A_QI_v'] = -profiles['W'] * np.gradient(profiles['QI'], height, axis=0)
     
     logger.info('Calculate vertical transport terms')
     profiles['A_RH_v'] = -profiles['W'] * np.gradient(profiles['RH'], height, axis=0)
@@ -1283,12 +1289,13 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             profiles['RH'],
             profiles['W']  
         )
-    profiles['DT_Dt_h'] = profiles['W'] * np.gradient(profiles['T'], height, axis=0)
+    
+    if 'A_T_v' in output_variables:
+        profiles['A_T_v'] = -profiles['W'] * np.gradient(profiles['TEMP'], height, axis=0)
+        profiles['DT_Dt_v'] = -typhon.constants.g / cp * profiles['W']
     
     logger.info('Read QV and RH from files and calculate horizontal transport terms')
-    R = typhon.constants.gas_constant_water_vapor
-    cp = typhon.constants.isobaric_mass_heat_capacity
-    L = typhon.constants.heat_of_vaporization
+
     for t in range(num_timesteps):
         print(t)
         start = t * num_samples_timestep
@@ -1341,8 +1348,76 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             dPdt = dPdx * profiles['U'][:, start:end] + dPdy * profiles['V'][:, start:end]
             dTdP = - R * profiles['TEMP'][:, start:end] / cp / profiles['PRES'][:, start:end]
 
-            profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt 
-            profiles['DT_Dt_h'][:, start:end] = dTdP * dPdt
+            profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L[:, start:end] / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt
+            
+            if 'A_T_h' in output_variables:
+                profiles['DT_Dt_h'][:, start:end] = dTdP * dPdt
+                profiles['A_T_h'][:, start:end] = -(dTdx * profiles['U'][:, start:end] + dTdy * profiles['V'][:, start:end])
+            
+        if 'QC' in input_variables:
+            with Dataset(filenames['QI']) as ds:
+                if model == 'MPAS':
+                    QI_next_lon = ds.variables['QI'][t][lat_idx[t], lon_idx_next, :].T
+                    QI_before_lon = ds.variables['QI'][t][lat_idx[t], lon_idx_before, :].T
+                    QI_next_lat = ds.variables['QI'][t][lat_idx[t] + 1, lon_idx[t], :].T
+                    QI_before_lat = ds.variables['QI'][t][lat_idx[t] - 1, lon_idx[t], :].T
+                    QI_next_lon[RH_next_lon < 1.] = 0.
+                    QI_before_lon[RH_before_lon < 1.] = 0.
+                    QI_next_lat[RH_next_lat < 1.] = 0.
+                    QI_before_lat[RH_before_lat < 1.] = 0.
+                    dQIdx = (QI_next_lon
+                            - QI_before_lon) / profiles['dx'][start:end]
+                    dQIdy = (QI_next_lat
+                            - QI_before_lat) / profiles['dy']
+
+                else:
+                    QI_next_lon = ds.variables['QI'][t][:, lat_idx[t], lon_idx_next]
+                    QI_before_lon = ds.variables['QI'][t][:, lat_idx[t], lon_idx_before]
+                    QI_next_lat = ds.variables['QI'][t][:, lat_idx[t] + 1, lon_idx[t]]
+                    QI_before_lat = ds.variables['QI'][t][:, lat_idx[t] - 1, lon_idx[t]]
+                    QI_next_lon[RH_next_lon < 1.] = 0.
+                    QI_before_lon[RH_before_lon < 1.] = 0.
+                    QI_next_lat[RH_next_lat < 1.] = 0.
+                    QI_before_lat[RH_before_lat < 1.] = 0.
+                    dQIdx = (QI_next_lon
+                            - QI_before_lon) / profiles['dx'][start:end]
+                    dQIdy = (QI_next_lat
+                            - QI_before_lat) / profiles['dy']
+
+
+
+                profiles['A_QI_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQIdx + profiles['V'][:, start:end] * dQIdy)
+            
+            with Dataset(filenames['QC']) as ds:
+                if model == 'MPAS':
+                    QC_next_lon = ds.variables['QC'][t][lat_idx[t], lon_idx_next, :]
+                    QC_before_lon = ds.variables['QC'][t][lat_idx[t], lon_idx_before, :]
+                    QC_next_lat = ds.variables['QC'][t][lat_idx[t] + 1, lon_idx[t], :]
+                    QC_before_lat = ds.variables['QC'][t][lat_idx[t] - 1, lon_idx[t], :]
+                    QC_next_lon[RH_next_lon < 1.] = 0.
+                    QC_before_lon[RH_before_lon < 1.] = 0.
+                    QC_next_lat[RH_next_lat < 1.] = 0.
+                    QC_before_lat[RH_before_lat < 1.] = 0.
+                    dQCdx = (QC_next_lon
+                            - QC_before_lon) / profiles['dx'][start:end]
+                    dQCdy = (QC_next_lat
+                            - QC_before_lat) / profiles['dy']
+
+                else:
+                    QC_next_lon = ds.variables['QC'][t][:, lat_idx[t], lon_idx_next]
+                    QC_before_lon = ds.variables['QC'][t][:, lat_idx[t], lon_idx_before]
+                    QC_next_lat = ds.variables['QC'][t][:, lat_idx[t] + 1, lon_idx[t]]
+                    QC_before_lat = ds.variables['QC'][t][:, lat_idx[t] - 1, lon_idx[t]]
+                    QC_next_lon[RH_next_lon < 1.] = 0.
+                    QC_before_lon[RH_before_lon < 1.] = 0.
+                    QC_next_lat[RH_next_lat < 1.] = 0.
+                    QC_before_lat[RH_before_lat < 1.] = 0.
+                    dQCdx = (QC_next_lon
+                            - QC_before_lon) / profiles['dx'][start:end]
+                    dQCdy = (QC_next_lat
+                            - QC_before_lat) / profiles['dy']
+
+                profiles['A_QC_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQCdx + profiles['V'][:, start:end] * dQCdy)
 
     if model == 'SAM':
          profiles['A_QV_h'] *= 1e-3
