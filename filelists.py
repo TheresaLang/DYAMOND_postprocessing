@@ -28,6 +28,11 @@ def get_modelspecific_varnames(model):
             'QI': 'QI_DIA',
             'OLR': 'ATHB_T',
             'IWV': 'TQV_DIA',
+            'TQC': 'TQC_DIA',
+            'TQI': 'TQI_DIA',
+            'TQR': 'TQR',
+            'TQS': 'TQS',
+            'TQG': 'TQG',
             'QC': 'QC_DIA',#'param212.1.0',
             'W500': 'omega',
             'W': 'W',#'wz', 
@@ -46,6 +51,7 @@ def get_modelspecific_varnames(model):
             'QV': 'ms_qv',
             'PRES': 'ms_pres', 
             'RH': 'RH',
+            'RHint': 'ms_rh',
             'QI': 'ms_qi',
             'IWV': 'sa_vap_atm',
             'OLR': 'sa_lwu_toa',
@@ -59,7 +65,10 @@ def get_modelspecific_varnames(model):
             'SDTOA': 'ss_swd_toa',
             'OLRC': 'ss_lwu_toa_c',
             'STOAC': '-',
-            'OMEGA': '-'
+            'OMEGA': '-',
+            'QR': 'ms_qr',
+            'QS': 'ms_qs',
+            'QG': 'ms_qg'
         }
     elif model == 'GEOS':
         varname = {
@@ -406,6 +415,11 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'QV': 'atm_3d_qv_ml_',
                 'PRES': 'atm_3d_pres_ml_',
                 'IWV': 'atm1_2d_ml_',
+                'TQI': 'atm1_2d_ml_',
+                'TQC': 'atm1_2d_ml_',
+                'TQR': 'atm3_2d_ml_',
+                'TQS': 'atm1_2d_ml_',
+                'TQG': 'atm1_2d_ml_',
                 'QI': 'atm_3d_tot_qi_dia_ml_',
                 'OLR': 'atm_2d_avg_ml_',
                 'QC': 'atm_3d_tot_qc_dia_ml_',
@@ -444,10 +458,11 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
 
                     raw_files.append(raw_file)
                     out_files.append(out_file)
-                    if var == 'OLR' or var == 'IWV' or var == 'W500':
+                    if var in ['OLR', 'IWV', 'TQI', 'TQC', 'TQR', 'TQS', 'TQG', 'W500']:
                         options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,1/96/12')
                     else:
                         options.append(f'-chname,{varname},{var} -selvar,{varname}')
+                    
                     weights.append(get_path2weights(model, run, grid_res))
                     grids.append(get_path2grid(grid_res))
 
@@ -458,10 +473,14 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'TEMP': 'ms_tem.nc',
                 'QV': 'ms_qv.nc',
                 'PRES': 'ms_pres.nc',
-                'QI': 'ms_qi.nc',
                 'IWV': 'sa_vap_atm.nc',
                 'OLR': 'sa_lwu_toa.nc',
                 'QC': 'ms_qc.nc',
+                'QI': 'ms_qi.nc',
+                'QR': 'ms_qr.nc',
+                'QS': 'ms_qs.nc',
+                'QG': 'ms_qg.nc',
+                'RHint': 'ms_rh.nc',
                 'W': 'ms_w.nc',
                 'U': 'ms_u.nc',
                 'V': 'ms_v.nc',
@@ -499,7 +518,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12')
                     else:
                         options.append(f'-chname,{varname},{var} -selvar,{varname}')
-                    weights.append(get_path2weights(model, run, grid_res))
+                    #weights.append(get_path2weights(model, run, grid_res))
+                    weights.append('/mnt/lustre02/work/mh1126/m300773/DYAMOND/NICAM/NICAM-3.5km_0.10_weightsnn.nc')
                     grids.append(get_path2grid(grid_res))
 
         elif model == 'GEOS':
@@ -746,6 +766,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'IWV': 'intqv',
                 'OLR': 'flut',
                 'W': 'w',
+                'U': 'u',
+                'V': 'v',
                 'QC': 'ql',
                 'SDTOA': 'fsdt',
                 'SUTOA': 'fsut',
@@ -803,8 +825,13 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         else:
                             dir_name = '2016083100'
                         timestep = np.mod(np.where(time_3h == t)[0][0], 80) + 1
-                        hour_file = var2filename[var] + '_C3072_12288x6144.fre.nc'
-                        hour_file = os.path.join(stem, dir_name, hour_file)
+                        
+                        if var in ['U', 'V']:
+                            hour_file = f'{var.lower()}_3hr.nc'
+                            hour_file = os.path.join(temp_dir, dir_name, hour_file)
+                        else:
+                            hour_file = var2filename[var] + '_C3072_12288x6144.fre.nc'
+                            hour_file = os.path.join(stem, dir_name, hour_file)
                         date_str = t.strftime('%m%d')
                         hour_str = t.strftime('%H')
                         out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
@@ -816,7 +843,10 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         raw_files.append(hour_file)
                         out_files.append(out_file)
                         options.append(option)
-                        weights.append(get_path2weights(model, run, grid_res))
+                        if var in ['U', 'V']:
+                            weights.append('/mnt/lustre02/work/mh1126/m300773/DYAMOND/FV3/FV3-3.25km_UV_0.10_grid_wghts.nc')
+                        else:
+                            weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
 
 
@@ -1135,7 +1165,8 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                         
         # only needed for variables U and V
         elif model == 'FV3':
-            stem = '/work/ka1081/DYAMOND/FV3-3.25km'
+            #stem = '/work/ka1081/DYAMOND/FV3-3.25km'
+            stem = '/mnt/lustre02/work/bk1040/DYAMOND_SWAP/FV3-3.25km'
             target_time_3h = pd.date_range(time_period[0]+' 3:00:00', pd.Timestamp(time_period[1]+' 0:00:00')+pd.DateOffset(1), freq='3h')
             time_3h = pd.date_range("2016-08-01 3:00:00", "2016-09-10 0:00:00", freq='3h')
             dir_names = ['2016080100', '2016081100', '2016082100', '2016083100']
