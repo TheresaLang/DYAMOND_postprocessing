@@ -1292,6 +1292,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     
     if 'A_T_v' in output_variables:
         profiles['A_T_v'] = -profiles['W'] * np.gradient(profiles['TEMP'], height, axis=0)
+    if 'DT_Dt_v' in output_variables:
         profiles['DT_Dt_v'] = -typhon.constants.g / cp * profiles['W']
     
     logger.info('Read QV and RH from files and calculate horizontal transport terms')
@@ -1354,7 +1355,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
                 profiles['DT_Dt_h'][:, start:end] = dTdP * dPdt
                 profiles['A_T_h'][:, start:end] = -(dTdx * profiles['U'][:, start:end] + dTdy * profiles['V'][:, start:end])
             
-        if 'QC' in input_variables:
+        if 'QI' in input_variables:
             with Dataset(filenames['QI']) as ds:
                 if model == 'MPAS':
                     QI_next_lon = ds.variables['QI'][t][lat_idx[t], lon_idx_next, :].T
@@ -1384,10 +1385,9 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
                     dQIdy = (QI_next_lat
                             - QI_before_lat) / profiles['dy']
 
-
-
                 profiles['A_QI_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQIdx + profiles['V'][:, start:end] * dQIdy)
-            
+                
+        if 'QC' in input_variables:
             with Dataset(filenames['QC']) as ds:
                 if model == 'MPAS':
                     QC_next_lon = ds.variables['QC'][t][lat_idx[t], lon_idx_next, :]
