@@ -1177,8 +1177,8 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     end_date = time[-1].strftime("%m%d")
 
     logger.info('Input and output variables and filenames')
-    input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES']
-    output_variables = ['U', 'V', 'A_QV_h', 'A_RH_h', 'A_QV_v', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v', 'DT_Dt_v', 'DT_Dt_h']
+    input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES'] # 'QC', 'QI'
+    output_variables = ['A_QV_h', 'A_RH_h', 'A_QV_v', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v', 'dRH_dx', 'dRH_dy'] # 'A_T_h', 'A_T_v', 'DT_Dt_h', 'DT_Dt_v', 'A_QC_h', 'A_QC_v', 'A_QI_h', 'A_QI_v'
     if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS']:
         filename = '{}-{}_{}_hinterp_vinterp_merged_{}-{}.nc'
     else:
@@ -1251,7 +1251,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     profiles['dy'] = 111000 * dy        
 
     logger.info('Allocate array for selected profiles')
-    for var in ['U', 'V', 'W', 'PRES', 'TEMP', 'QV', 'RH', 'A_QV_v', 'A_RH_v', 'A_QV_h', 'A_RH_h', 'DRH_Dt_v', 'DRH_Dt_h', 'DT_Dt_v', 'DT_Dt_h']:
+    for var in list(set(input_variables) | set(output_variables)):
         profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
         #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
 
