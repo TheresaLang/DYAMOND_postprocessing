@@ -1588,6 +1588,12 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             profiles_sorted['TEMP'], 
             height
         )
+        
+    if 'UV' in extra_variables:
+        profiles_sorted['UV'] = np.sqrt(profiles_sorted['U'] ** 2 + profiles_sorted['V'] ** 2)
+    
+    if 'dRH_dz' in extra_variables:
+        profiles_sorted['dRH_dz'] = np.gradient(profiles_sorted['RH'], height, axis=0)
     # create mask to exclude profiles with no given longitude       
     nan_mask = np.isnan(profiles_sorted['lon'])
     # create mask to exclude profiles with unrealistic advection values
