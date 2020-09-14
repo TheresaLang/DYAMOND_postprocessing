@@ -987,8 +987,9 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
     test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
     test_var = variables[test_ind]
     test_filename = infiles[test_ind]
-    time_delta = pd.Timedelta(hours=2)
-
+    overpass_time = [9900, 53100] # 2:45 and 14:45
+    time_delta = 19 * 60 # in seconds
+    
     logger.info('Get dimensions')
     # height
     height = atools.read_var(heightfile, model, 'target_height')
@@ -1026,10 +1027,12 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
     lat_reg_ind = np.where(np.logical_and(lat >= lonlatbox[2], lat <= lonlatbox[3]))[0]
     lat_reg = lat[lat_reg_ind]
 
-    def lst(utc, lon):
+    def lst_sec(utc, lon):
         timediff = pd.Timedelta(hours=np.deg2rad(lon)/np.pi*12)
-        return (utc + timediff).hour
-    vlst = np.vectorize(lst)
+        lst = utc + timediff
+        lst_sec = (lst.hour * 60 + lst.minute) * 60 + lst.second
+        return lst_sec
+    vlst = np.vectorize(lst_sec)
     lst = np.empty((num_timesteps, len(lat_reg), len(lon_reg)), dtype=pd.Timestamp)
     lst_mask = []
 
@@ -1037,7 +1040,7 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
         lst_lon = vlst(time_array[t], lon_reg)
         lst[t] = np.repeat(lst_lon[np.newaxis, :], len(lat_reg), axis=0)
         # Gitterzellen mit lsts, diezur CloudSat overpass time passen
-        lst_mask.append(np.logical_or(np.logical_and(0 <= lst[t], lst[t] <= 3), np.logical_and(12 <= lst[t], lst[t] <= 15)))
+        lst_mask.append(np.logical_or(np.logical_and(overpass_time[0] - time_delta <= lst[t], lst[t] <= overpass_time[0] + time_delta), np.logical_and(overpass_time[1] - time_delta <= lst[t], lst[t] <= overpass_time[1] + time_delta)))
 
 
     logger.info('NaN mask')
@@ -1603,8 +1606,9 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     else:
         thres_a_qv = 3e-5
     if 'A_QV_h' in variables:
-        wrong_mask_1 = np.logical_or(np.any(profiles_sorted['A_QV_h'][tropo] < -thres_a_qv, axis=0),
-                                  np.any(profiles_sorted['A_QV_h'][tropo] > thres_a_qv, axis=0))
+        #wrong_mask_1 = np.any(np.abs(profiles_sorted['A_QV_h'][tropo]) > thres_a_qv, axis=0) 
+        wrong_mask_1 = np.logical_or(np.any(np.abs(profiles_sorted['A_QV_h'][tropo]) > thres_a_qv, axis=0),
+                                     np.any(np.abs(profiles_sorted['A_QV_h'] / profiles_sorted['QV']) > 0.01, axis=0))
 
         nan_mask = np.logical_or(nan_mask, wrong_mask_1).astype(int)
         
