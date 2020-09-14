@@ -1329,14 +1329,32 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
                         - ds.variables['QV'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
 
             profiles['A_QV_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQdx + profiles['V'][:, start:end] * dQdy)
-
+            
         with Dataset(filenames['RH']) as ds:
-            dRHdx = (ds.variables['RH'][t][:, lat_idx[t], lon_idx_next]
-                     - ds.variables['RH'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
-            dRHdy = (ds.variables['RH'][t][:, lat_idx[t] + 1, lon_idx[t]]
-                    - ds.variables['RH'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+            RH_next_lon = ds.variables['RH'][t][:, lat_idx[t], lon_idx_next]
+            RH_before_lon = ds.variables['RH'][t][:, lat_idx[t], lon_idx_before]
+            RH_next_lat = ds.variables['RH'][t][:, lat_idx[t] + 1, lon_idx[t]]
+            RH_before_lat = ds.variables['RH'][t][:, lat_idx[t] - 1, lon_idx[t]]
+            dRHdx = (RH_next_lon
+                     - RH_before_lon) / profiles['dx'][start:end]
+            dRHdy = (RH_next_lat
+                    - RH_before_lat) / profiles['dy']
 
             profiles['A_RH_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dRHdx + profiles['V'][:, start:end] * dRHdy)
+            profiles['dRH_dx'][:, start:end] = dRHdx
+            profiles['dRH_dy'][:, start:end] = dRHdy
+            
+        with Dataset(filenames['TEMP']) as ds:
+            if model == 'MPAS':
+                dTdx = (ds.variables['TEMP'][t][lat_idx[t], lon_idx_next, :]
+                         - ds.variables['TEMP'][t][lat_idx[t], lon_idx_before, :]).T / profiles['dx'][start:end]
+                dTdy = (ds.variables['TEMP'][t][lat_idx[t] + 1, lon_idx[t], :]
+                        - ds.variables['TEMP'][t][lat_idx[t] - 1, lon_idx[t], :]).T / profiles['dy']
+            else:
+                dTdx = (ds.variables['TEMP'][t][:, lat_idx[t], lon_idx_next]
+                         - ds.variables['TEMP'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
+                dTdy = (ds.variables['TEMP'][t][:, lat_idx[t] + 1, lon_idx[t]]
+                        - ds.variables['TEMP'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
             
         with Dataset(filenames['PRES']) as ds:
             if model == 'SAM':
