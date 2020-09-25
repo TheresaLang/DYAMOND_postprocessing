@@ -24,6 +24,7 @@ def get_modelspecific_varnames(model):
             'TEMP': 'T',
             'QV': 'QV',
             'PRES': 'P',
+            'SURF_PRES': 'PS', 
             'RH': 'RH',
             'QI': 'QI_DIA',
             'OLR': 'ATHB_T',
@@ -49,7 +50,8 @@ def get_modelspecific_varnames(model):
         varname = {
             'TEMP': 'ms_tem',
             'QV': 'ms_qv',
-            'PRES': 'ms_pres', 
+            'PRES': 'ms_pres',
+            'SURF_PRES': 'ss_slp',
             'RH': 'RH',
             'RHint': 'ms_rh',
             'QI': 'ms_qi',
@@ -75,6 +77,7 @@ def get_modelspecific_varnames(model):
             'TEMP': 'T',
             'QV': 'QV',
             'PRES': 'P',
+            'SURF_PRES': 'SLP',
             'RH': 'RH',
             'H': 'H',
             'QI': 'QI',
@@ -115,6 +118,7 @@ def get_modelspecific_varnames(model):
             'TEMP': 'TABS',
             'QV': 'QV',
             'PRES': 'PRES',
+            'SURF_PRES': 'PSFC',
             'RH': 'RH',
             'QI': 'QI',
             'IWV': 'PW',
@@ -131,6 +135,7 @@ def get_modelspecific_varnames(model):
             'TEMP': 'air_temperature',
             'QV': 'specific_humidity',
             'PRES': 'air_pressure',
+            'SURF_PRES': 'surface_air_pressure',
             'RH': 'RH',
             'QI': 'mass_fraction_of_cloud_ice_in_air',
             'OLR': 'toa_outgoing_longwave_flux',
@@ -151,6 +156,7 @@ def get_modelspecific_varnames(model):
             'TEMP': 'temp',
             'QV': 'qv',
             'PRES': 'pres',
+            'SURF_PRES': 'ps',
             'RH': 'RH',
             'QI': 'qi',
             'IWV': 'intqv',
@@ -172,6 +178,7 @@ def get_modelspecific_varnames(model):
             'QV': 'qv',
             'QI': 'qi',
             'PRES': 'pressure',
+            'SURF_PRES': 'mslp',
             'RH': 'RH',
             'IWV': 'vert_int_qv',
             'OLR': 'aclwnett',
@@ -414,6 +421,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'TEMP': 'atm_3d_t_ml_',
                 'QV': 'atm_3d_qv_ml_',
                 'PRES': 'atm_3d_pres_ml_',
+                'SURF_PRES': 'atm2_2d_ml_',
                 'IWV': 'atm1_2d_ml_',
                 'TQI': 'atm1_2d_ml_',
                 'TQC': 'atm1_2d_ml_',
@@ -458,7 +466,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
 
                     raw_files.append(raw_file)
                     out_files.append(out_file)
-                    if var in ['OLR', 'IWV', 'TQI', 'TQC', 'TQR', 'TQS', 'TQG', 'W500']:
+                    if var in ['SURF_PRES', 'OLR', 'IWV', 'TQI', 'TQC', 'TQR', 'TQS', 'TQG', 'W500']:
                         options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,1/96/12')
                     else:
                         options.append(f'-chname,{varname},{var} -selvar,{varname}')
@@ -473,6 +481,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'TEMP': 'ms_tem.nc',
                 'QV': 'ms_qv.nc',
                 'PRES': 'ms_pres.nc',
+                'SURF_PRES': 'ss_slp.nc',
                 'IWV': 'sa_vap_atm.nc',
                 'OLR': 'sa_lwu_toa.nc',
                 'QC': 'ms_qc.nc',
@@ -514,19 +523,20 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
 
                     raw_files.append(raw_file)
                     out_files.append(out_file)
-                    if var in ['OLR', 'IWV', 'OLRC', 'SUTOA', 'SDTOA']:
+                    if var in ['SURF_PRES', 'OLR', 'IWV', 'OLRC', 'SUTOA', 'SDTOA']:
                         options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12')
                     else:
                         options.append(f'-chname,{varname},{var} -selvar,{varname}')
-                    #weights.append(get_path2weights(model, run, grid_res))
-                    weights.append('/mnt/lustre02/work/mh1126/m300773/DYAMOND/NICAM/NICAM-3.5km_0.10_weightsnn.nc')
+                    weights.append(get_path2weights(model, run, grid_res))
+                    #weights.append('/mnt/lustre02/work/mh1126/m300773/DYAMOND/NICAM/NICAM-3.5km_0.10_weightsnn.nc')
                     grids.append(get_path2grid(grid_res))
 
         elif model == 'GEOS':
             var2dirname = {
                 'TEMP': 'T',
                 'QV': 'QV',
-                'PRES': 'P', 
+                'PRES': 'P',
+                'SURF_PRES': 'asm',
                 'H': 'H',
                 'QI': 'QI',
                 'IWV': 'asm',
@@ -547,7 +557,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 if run == '3.0km':
                     if var in ['OLR', 'STOA', 'OLRC', 'STOAC']:
                         stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/tavg/tavg_15mn_2d_{varname}_Mx' 
-                    elif var == 'IWV':
+                    elif var in ['IWV', 'SURF_PRES']:
                         stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/inst/inst_15mn_2d_{varname}_Mx'
                     else:
                         stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/inst/inst_03hr_3d_{varname}_Mv'
@@ -560,7 +570,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         hour_str = f'{h:02d}'
                         if var in ['OLR', 'STOA', 'OLRC', 'STOAC']:
                             hour_file = f'DYAMOND.tavg_15mn_2d_flx_Mx.{date_str}_{hour_str}00z.nc4'
-                        elif var == 'IWV':
+                        elif var in ['IWV', 'SURF_PRES']:
                             hour_file = f'DYAMOND.inst_15mn_2d_asm_Mx.{date_str}_{hour_str}00z.nc4'
                         else:
                             hour_file = f'DYAMOND.inst_03hr_3d_{varname}_Mv.{date_str}_{hour_str}00z.nc4'
@@ -656,6 +666,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'TEMP': '_TABS',
                 'QV': '_QV',
                 'PRES': '_PP',
+                'SURF_PRES': '.PSFC.2D',
                 'QI': '_QI',
                 'IWV': '.PW.2D',
                 'OLR': '.LWNTA.2D',
@@ -671,7 +682,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
 
             for var in variables:
                 varname = varnames[var]
-                if var in ['OLR', 'STOA', 'IWV']:
+                if var in ['OLR', 'STOA', 'IWV', 'SURF_PRES']:
                     stem = '/mnt/lustre02/work/ka1081/DYAMOND/SAM-4km/OUT_2D'
                 else:
                     stem = '/mnt/lustre02/work/ka1081/DYAMOND/SAM-4km/OUT_3D'
@@ -706,6 +717,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'TEMP': 'ta',
                 'QV': 'hus',
                 'PRES': 'phalf',
+                'SURF_PRES': 'ps',
                 'IWV': 'prw',
                 'QI': 'cli',
                 'OLR': 'rlut',
@@ -730,7 +742,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                     else: 
                         varstr = var2dirname[var]
 
-                    if var == 'IWV':
+                    if var in ['IWV', 'SURF_PRES']:
                         opt = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12'
                         day_file = f'{varstr}_15min_HadGEM3-GA71_N2560_{date_str}.nc'
                     elif var in ['OLR', 'SDTOA', 'SUTOA']:
@@ -762,6 +774,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'TEMP': 'temp',
                 'QV': 'qv',
                 'PRES': 'pres',
+                'SURF_PRES': 'ps',
                 'QI': 'qi',
                 'IWV': 'intqv',
                 'OLR': 'flut',
@@ -786,7 +799,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
             for var in variables:
                 print(var)
                 varname = varnames[var]
-                if var in ['IWV', 'OLR', 'SDTOA', 'SUTOA']:
+                if var in ['IWV', 'OLR', 'SDTOA', 'SUTOA', 'SURF_PRES']:
                     for t in target_time_15min:
                         print(t)
                         if t < pd.Timestamp('2016-08-11 3:00:00'):
@@ -1130,6 +1143,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
             var2filename = {
                 'TEMP': 'history',
                 'PRES': 'history',
+                'SURF_PRES': 'diag',
                 'QV': 'history',
                 'QI': 'history',
                 'QC': 'history',
