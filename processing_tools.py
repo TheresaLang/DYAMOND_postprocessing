@@ -1516,7 +1516,7 @@ def estimate_condensation_for_random_profiles(model, run, time_period, num_sampl
         ce_tendency, 'DRH_Dt_c', '', (height, range(num_profiles)), ('height', 'profile_index'), outname, overwrite=True
             )
     
-def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, **kwargs):
+def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, log_average, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
     ocean basins. Output is saved as .pkl files.
     
@@ -1535,7 +1535,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     end_date = time[-1].strftime("%m%d")
     variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'QS', 'QG', 'QR', 'RH', 'W', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V', 'UV', 'dRH_dx', 'dRH_dy', 'dRH_dz']
     variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR']
-    extra_variables = ['UV', 'dRH_dz']
+    extra_variables = ['QV', 'dRH_dz']
     datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
     perc_values = np.arange(2., 100.5, 2.0)
@@ -1550,6 +1550,10 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
         sample_days_str = ''
     else:
         sample_days_str = '_'+sample_days
+    if log_average:
+        log_average_str = '_log'
+    else:
+        log_average_str = ''
     
     logger.info('Read data from files')
     filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, sample_days_str, '')
@@ -1642,7 +1646,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
             axis=1
             splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=axis)
         
-        if var in ['PRES', 'QV']:
+        if var in ['PRES', 'QV'] and log_average == True:
             # Average pressure in log-space
             perc['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(a), axis=axis)) for a in splitted_array[var]])
         else:
@@ -1707,8 +1711,8 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
         
     logger.info('Write output')
     #output files
-    outname_perc = f'{model}-{run}_{start_date}-{end_date}_{num_percs}_perc_means_{num_samples}{sample_days_str}_1exp.pkl'
-    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}{sample_days_str}_1exp.pkl'
+    outname_perc = f'{model}-{run}_{start_date}-{end_date}_{num_percs}_perc_means_{num_samples}{sample_days_str}{log_average_str}_1exp.pkl'
+    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}{sample_days_str}{log_average_str}_1exp.pkl'
     
     with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
         pickle.dump(perc, outfile) 
