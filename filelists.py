@@ -1084,13 +1084,15 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
                 'QI': 247,
                 'QC': 246,
                 'OMEGA': 135,
+                'U': 131,
+                'V': 132,
                 'OLR': 235040,
                 'STOA': 235035
             }
             
             for var in variables:
                 # option 1: variable given on spectral or Gaussian reduced grid
-                if var in ['TEMP', 'OMEGA']:
+                if var in ['TEMP', 'OMEGA', 'U', 'V']:
                     option_1 = 'spectral'
                 else:
                     option_1 = 'gaussian'
