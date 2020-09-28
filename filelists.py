@@ -1768,7 +1768,7 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
     """  
     #model = models[0]
     #run = runs[0]
-    variables_2D = ['OLR', 'OLRC', 'STOA', 'STOAC', 'IWV', 'CRH']
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'STOAC', 'IWV', 'CRH', 'SURF_PRES', 'SST']
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date_in = time[0].strftime("%m%d")
     end_date_in = time[-1].strftime("%m%d")
@@ -1805,11 +1805,13 @@ def get_samplefilelist(num_samples_tot, models, runs, variables, time_period, lo
         for var in variables:
             if model in ['ICON', 'MPAS'] and var == 'W':
                 var = 'WHL'
-            if model in ['IFS', 'GEOS', 'FV3', 'ARPEGE', 'ERA5'] and var not in variables_2D:
-                file = f'{model}-{run}_{var}_hinterp_vinterp_merged_{start_date_in}-{end_date_in}.nc'
+            if var == 'SST':
+                file = f'Initialization/DYAMOND_SST_{start_date_in}-{end_date_in}_hinterp_merged.nc'
+            elif model in ['IFS', 'GEOS', 'FV3', 'ARPEGE', 'ERA5'] and var not in variables_2D:
+                file = f'{model}/{model}-{run}_{var}_hinterp_vinterp_merged_{start_date_in}-{end_date_in}.nc'
             else: 
-                file = f'{model}-{run}_{var}_hinterp_merged_{start_date_in}-{end_date_in}.nc'
-            file = os.path.join(data_dir, model, file)
+                file = f'{model}/{model}-{run}_{var}_hinterp_merged_{start_date_in}-{end_date_in}.nc'
+            file = os.path.join(data_dir, file)
             infile_sublist.append(file) 
 
         for var in variables + ['IWV', 'CRH', 'lon', 'lat', 'ind_lon', 'ind_lat', 'sort_ind']:
