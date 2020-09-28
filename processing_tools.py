@@ -779,7 +779,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     
     logger.info(model)
     logger.info('Config')
-    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR', 'lat', 'lon', 'timestep']
+    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR', 'lat', 'lon', 'timestep', 'SST', 'SURF_PRES']
     test_ind = [i for i in range(len(variables)) if variables[i] not in variables_2D][0]
     test_var = variables[test_ind]
     test_filename = infiles[test_ind]
@@ -897,10 +897,17 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                 start = j * num_samples_timestep
                 end = start + num_samples_timestep
                 with Dataset(infiles[i]) as ds:
-                    if model == 'NICAM':
-                        profiles[var][start:end] = ds.variables[var][t][0, lat_inds[j], lon_inds[j]].filled(np.nan)
+                    if var == 'SST':
+                        t_eff = t // 2
                     else:
-                        profiles[var][start:end] = ds.variables[var][t][lat_inds[j], lon_inds[j]].filled(np.nan)
+                        t_eff = t
+  
+                    if model == 'NICAM':
+                        profiles[var][start:end] = ds.variables[var][t_eff][0, lat_inds[j], lon_inds[j]].filled(np.nan)
+                    elif model == 'IFS' and var == 'SURF_PRES':
+                        profiles[var][start:end] = np.exp(ds.variables[var][t_eff][lat_inds[j], lon_inds[j]].filled(np.nan))
+                    else:
+                        profiles[var][start:end] = ds.variables[var][t_eff][lat_inds[j], lon_inds[j]].filled(np.nan)
         else:
             profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
             profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
@@ -1534,7 +1541,7 @@ def average_random_profiles(model, run, time_period, variables, num_samples, sam
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
     variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'QS', 'QG', 'QR', 'RH', 'W', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V', 'UV', 'dRH_dx', 'dRH_dy', 'dRH_dz']
-    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR']
+    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR', 'SST', 'SURF_PRES']
     extra_variables = ['QV', 'dRH_dz']
     datapath = f'{data_dir}/{model}/random_samples/'
     filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
