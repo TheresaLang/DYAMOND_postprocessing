@@ -600,29 +600,29 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
         if model == 'SAM':
             pres_pert = ds.variables[pres_name][timestep].filled(np.nan)
             pres_mean = ds.variables['p'][:].filled(np.nan)
-        # FV3: only one pressure vector is given (same for every grid cell)
-        if model == 'FV3':
-            pres_vector = ds.variables['pfull'][:].filled(np.nan)
-            pres = np.zeros((len(pres_vector), len(lat), len(lon)))
-            for la in range(len(lat)):
-                for lo in range(len(lon)):
-                    pres[:, la, lo] = pres_vector
+        # FV3:
         else:
             pres = ds.variables[pres_name][timestep].filled(np.nan)
             
     # orography
     with Dataset(z0_file) as ds:
         if model in ['IFS', 'ERA5']:
-            z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
+            #z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
+            z0 = np.ones((len(lat), len(lon))) * 10. #lowest model level at 10 m (first half level)
         elif model == 'FV3':
-            z0 = ds.variables['z'][:].filled(np.nan)
+            z0 = np.ones((len(lat), len(lon))) * 14. # lowest model level at about 14m 
+            #z0 = ds.variables['z'][:].filled(np.nan)
         elif model == 'ARPEGE':
-            z0 = ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g 
-            # z0 = np.ones((len(lat), len(lon))) * 17. (lowest model level is at 17 meters above sea level)
+            #z0 = ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g # lowest level from geopotential
+            z0 = np.ones((len(lat), len(lon))) * 17. #(lowest model level is at 17 meters above sea level)
             
     # Calculate heights
     logger.info('Calculate heights')
-    height = np.flipud(pressure2height(np.flipud(pres), np.flipud(temp), z0))
+    if model == 'IFS':
+        height = np.flipud(pressure2height(pres, temp, z0))
+    else:
+        height = np.flipud(pressure2height(np.flipud(pres), np.flipud(temp), z0))
+    
 
     # Save to file
     logger.info('Save heights to file')
