@@ -100,8 +100,8 @@ def get_modelspecific_varnames(model):
             'QI': 'QI',
             'QC': 'param83.1.0',
             'W': 'param120.128.192',
-            'U': '',
-            'V': '',
+            'U': 'U',
+            'V': 'V',
             'PRES': 'PRES',
             'RH': 'RH',
             'OLR': 'OLR',
@@ -210,7 +210,7 @@ def get_modelspecific_varnames(model):
         }
 
     else:
-        print('Modelspecific variable names for Model {model} have not been implemented yet.')
+        print(f'Modelspecific variable names for Model {model} have not been implemented yet.')
         return
         
     return varname
@@ -921,7 +921,9 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'SURF_PRES': 'var134',
                 'QI': 'param84.1.0', 
                 'QC': 'param83.1.0',
-                'OMEGA': 'OMEGA'
+                'OMEGA': 'OMEGA',
+                'U': 'U',
+                'V': 'V'
             }
             for var in variables:
                 option = f'-seltimestep,1/24/3 -chname,{var2variablename[var]},{var}'
