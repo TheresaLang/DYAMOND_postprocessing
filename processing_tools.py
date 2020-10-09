@@ -607,8 +607,8 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
     # orography
     with Dataset(z0_file) as ds:
         if model in ['IFS', 'ERA5']:
-            #z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
-            z0 = np.ones((len(lat), len(lon))) * 10. #lowest model level at 10 m (first half level)
+            z0 = ds.variables['z'][0][0].filled(np.nan) / typhon.constants.g
+            #z0 = np.ones((len(lat), len(lon))) * 10. #lowest model level at 10 m (first half level)
         elif model == 'FV3':
             z0 = np.ones((len(lat), len(lon))) * 14. # lowest model level at about 14m 
             #z0 = ds.variables['z'][:].filled(np.nan)
@@ -619,7 +619,7 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
     # Calculate heights
     logger.info('Calculate heights')
     if model == 'IFS':
-        height = np.flipud(pressure2height(pres, temp, z0))
+        height = np.flipud(pressure2height(pres, np.flipud(temp), z0))
     else:
         height = np.flipud(pressure2height(np.flipud(pres), np.flipud(temp), z0))
     
