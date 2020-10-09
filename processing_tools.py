@@ -1210,6 +1210,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         num_samples (num): number of randomly selected profiles
         data_dir (str): Path to output directory
     """
+    logger.info(f'{model}-{run}')
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
     end_date = time[-1].strftime("%m%d")
