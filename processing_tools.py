@@ -1322,7 +1322,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     logger.info('Calculate vertical transport terms')
     R = typhon.constants.gas_constant_water_vapor
     cp = typhon.constants.isobaric_mass_heat_capacity
-    L = utils.mixed_heat_of_vaporization(profiles['TEMP'])
+    L = typhon.constants.heat_of_vaporization
     rho = profiles['PRES'] / (profiles['TEMP'] * R) 
     #rho = utils.calc_density_moist_air(
     #    profiles['PRES'],
@@ -1416,7 +1416,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             dPdt = dPdx * profiles['U'][:, start:end] + dPdy * profiles['V'][:, start:end]
             dTdP = -1 / rho[:, start:end] / cp
 
-            profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L[:, start:end] / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt
+            profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt
             
             if 'A_T_h' in output_variables:
                 profiles['DT_Dt_h'][:, start:end] = dTdP * dPdt
