@@ -926,10 +926,10 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
                     else:
                         t_eff = t
   
-                    if model == 'NICAM':
+                    if model == 'NICAM' and var != 'SST':
                         profiles[var][start:end] = ds.variables[var][t_eff][0, lat_inds[j], lon_inds[j]].filled(np.nan)
                     elif model == 'IFS' and var == 'SURF_PRES':
-                        profiles[var][start:end] = np.exp(ds.variables[var][t_eff][lat_inds[j], lon_inds[j]].filled(np.nan))
+                        profiles[var][start:end] = np.exp(ds.variables[var][t_eff][0, lat_inds[j], lon_inds[j]].filled(np.nan))
                     else:
                         profiles[var][start:end] = ds.variables[var][t_eff][lat_inds[j], lon_inds[j]].filled(np.nan)
         else:
