@@ -1217,7 +1217,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     logger.info('Input and output variables and filenames')
     input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES'] # 'QC', 'QI'
     output_variables = ['A_QV_h', 'A_RH_h', 'A_QV_v', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v', 'dRH_dx', 'dRH_dy'] # 'A_T_h', 'A_T_v', 'DT_Dt_h', 'DT_Dt_v', 'A_QC_h', 'A_QC_v', 'A_QI_h', 'A_QI_v'
-    if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS']:
+    if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS', 'ERA5']:
         filename = '{}-{}_{}_hinterp_vinterp_merged_{}-{}.nc'
     else:
         filename = '{}-{}_{}_hinterp_merged_{}-{}.nc'
