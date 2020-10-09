@@ -755,34 +755,6 @@ def select_lonlatbox(infile, outfile, lonlatbox, numthreads, **kwargs):
     logger.info(cmd)
     os.system(cmd)
     
-def select_random_profiles_old_indices(model, run, num_samples_tot, infiles, outfiles, heightfile, landmaskfile,\
-                               variables, lonlatbox, vinterp, data_dir, sample_days, timesteps=None, **kwargs):
-    """ Select a subset of random profiles from (horizontally interpolated) model fields using the random indices from a previous selection.
-    """
-    logger.info(model)
-    logger.info('Config')
-    variables_2D = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR', 'lat', 'lon', 'timestep']
-    filename_sort_idx = outfiles[-1]
-    filename_lat_idx = outfiles[-2]
-    filename_lon_idx = outfiles[-3]
-    
-    logger.info('Read indices from files')
-    with Dataset(filename_sort_idx) as ds:
-        sort_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
-
-    with Dataset(filename_lat_idx) as ds:
-        lat_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
-
-    with Dataset(filename_lon_idx) as ds:
-        lon_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
-
-    logger.info('Timesteps')
-    num_timesteps = lon_idx.shape[0]
-    num_samples_timestep = lon_idx.shape[1]
-    num_samples_tot = num_samples_timestep * num_timesteps
-    
-    
-
 def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heightfile, landmaskfile,\
                                variables, lonlatbox, vinterp, data_dir, sample_days, new_sampling_idx, timesteps=None, **kwargs):
     """ Selects a subset of random profiles from (horizontally interpolated) model fields, sorts them by their integrated
@@ -1522,62 +1494,6 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         nctools.array2D_to_netCDF(
             profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
                 )
-        
-def estimate_condensation_for_random_profiles(model, run, time_period, num_samples, data_dir, **kwargs):
-    """ Estimate the source/sink term for RH from condensation and evaporation by performing a saturation adjustment.
-    
-    Parameters:
-        model (str): name of model
-        run (str): name of model run
-        time_period (list of str): list containing start and end of time period as string 
-            in the format YYYY-mm-dd 
-        num_samples (num): number of randomly selected profiles
-        data_dir (str): Path to output directory
-    """
-    time = pd.date_range(time_period[0], time_period[1], freq='1D')
-    start_date = time[0].strftime("%m%d")
-    end_date = time[-1].strftime("%m%d")
-    
-    input_variables = ['A_RH_h', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v', 'RH', 'QV', 'QC', 'QI', 'PRES', 'TEMP']
-    filename = '{}-{}_{}_sample_{}_{}-{}.nc'
-    filenames = {}
-    for var in input_variables:
-        filenames[var] = os.path.join(data_dir, model, 'random_samples',
-                                     filename.format(model, run, var, num_samples, start_date, end_date)
-                                     )
-    outname = os.path.join(data_dir, model, 'random_samples', 
-                           filename.format(model, run, 'DRH_Dt_c', num_samples, start_date, end_date)
-                          )
-    heightfile = filelists.get_path2targetheightfile(model, data_dir)
-    
-    logger.info('Read variables from files.')
-    profiles = {}
-    for var in input_variables:
-        with Dataset(filenames[var]) as ds:
-            profiles[var] = ds.variables[var][:].filled(np.nan)
-    
-    with Dataset(heightfile) as ds:
-        height = ds.variables['target_height'][:].filled(np.nan)
-
-    logger.info('Calculate tendency.')
-    num_profiles = profiles['RH'].shape[1]
-    dr_dt = profiles['DRH_Dt_h'] + profiles['DRH_Dt_v'] + profiles['A_RH_h'] + profiles['A_RH_v']
-    q_tot = profiles['QV'] + profiles['QC'] + profiles['QI'] # total condensate concentration
-    ce_tendency = np.ones(dr_dt.shape) * np.nan
-
-    r_new = profiles['RH'] + dr_dt # RH in next timestep
-    ind_cond = np.where(r_new >= 1.)
-    ind_evap = np.where(r_new < 1.)
-
-    r_evap = utils.spec_hum2rel_hum(q_tot, profiles['TEMP'], profiles['PRES'], phase='mixed')# RH after evaporating all condensate 
-
-    ce_tendency[ind_cond] = profiles['RH'][ind_cond] - r_new[ind_cond] # where r_new > 0, condensation occurs
-    ce_tendency[ind_evap] = np.minimum(r_evap[ind_evap], np.ones(profiles['RH'].shape)) - r_new[ind_evap] # where r_new <0, all condensate can evaporate until r=100%. Produces much too high values!
-
-    logger.info('Save tendency to file.')
-    nctools.array2D_to_netCDF(
-        ce_tendency, 'DRH_Dt_c', '', (height, range(num_profiles)), ('height', 'profile_index'), outname, overwrite=True
-            )
     
 def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, log_average, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
