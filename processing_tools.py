@@ -1036,8 +1036,6 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
     if model == 'GEOS':
         surface = -2
 
-    print(surface)
-
     # timesteps
     logger.info('Timesteps')
     if timesteps is not None:
@@ -1235,6 +1233,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     outnames = {}
     
     for var in input_variables:
+        print(var)
         if model in ['ICON', 'MPAS'] and var == 'W':
             filenames[var] = os.path.join(data_dir, model,
                                           filename.format(model, run, 'WHL', start_date, end_date)
@@ -1243,6 +1242,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             filenames[var] = os.path.join(data_dir, model,
                                           filename.format(model, run, var, start_date, end_date)
                                          )
+        print(filenames[var])
     for var in output_variables:
         outnames[var] = os.path.join(data_dir, model, 'random_samples',
                                      filename_out.format(model, run, var, num_samples, start_date, end_date)
@@ -1259,7 +1259,8 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         
     with Dataset(heightfile) as ds:
         height = ds.variables['target_height'][:]
-
+    print('height:')
+    print(height.shape)
     logger.info('Read indices from files')
     with Dataset(filename_sort_idx) as ds:
         sort_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
