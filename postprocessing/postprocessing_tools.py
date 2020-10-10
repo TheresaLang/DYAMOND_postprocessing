@@ -1,3 +1,120 @@
+import numpy as np
+import pandas as pd
+import os
+import glob
+import logging
+import json
+import typhon
+import random
+import pickle
+import filelists
+import analysis_tools as atools
+from time import sleep
+from scipy.interpolate import interp1d
+from netCDF4 import Dataset
+import matplotlib.pyplot as plt
+from moisture_space import utils
+import netCDF_tools as nctools
+
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+def config():
+    """ Reads specifications for processing from confing.json and returns a dictionary
+    with specifications.
+    """
+    with open('/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/postprocessing/postprocessing_config.json') as handle:
+        config = json.loads(handle.read())
+    
+    return config
+
+def read_var(infile, model, varname):
+    """ Reads in one variable from a given netCDF file.
+    
+    Parameters:
+        infile (str): Path to input file
+        model (str): Name of model that the data belongs to
+        varname (str): Name of netCDF variable to read in
+    
+    Returns:
+        float or ndarray: Data array with variable
+    """
+    with Dataset(infile) as ds:
+        if model == 'SAM' and varname == 'PRES':
+            pres_mean = ds.variables['p'][:].filled(np.nan)
+            pres_pert = ds.variables['PP'][:].filled(np.nan)
+            var = np.zeros((pres_pert.shape))
+            for k in range(pres_pert.shape[0]):
+                for i in range(pres_pert.shape[2]):
+                    for j in range(pres_pert.shape[3]):
+                        var[k, :, i, j] = pres_mean * 1e2 + pres_pert[k, :, i, j]
+        else:
+            var = ds.variables[varname][:].filled(np.nan)
+            
+        if model == 'MPAS' and len(var.shape) == 4 and varname != 'RH': 
+            var = var.transpose((0, 3, 1, 2))
+            
+    return var
+
+def read_var_timestep(infile, model, varname, timestep):
+    """ Reads in one variable from a given netCDF file.
+    
+    Parameters:
+        infile (str): Path to input file
+        model (str): Name of model that the data belongs to
+        varname (str): Name of netCDF variable to read in
+        timestep (int): Timestep of field to read in
+        
+    Returns:
+        float or ndarray: Data array with variable
+    """
+    with Dataset(infile) as ds:
+        if model == 'SAM' and varname == 'PRES':
+            pres_mean = ds.variables['p'][:].filled(np.nan)
+            pres_pert = ds.variables['PP'][timestep].filled(np.nan)
+            var = np.zeros((pres_pert.shape[0], pres_pert.shape[1], pres_pert.shape[2]))
+            for i in range(pres_pert.shape[1]):
+                for j in range(pres_pert.shape[2]):
+                    var[:, i, j] = pres_mean * 1e2 + pres_pert[:, i, j]
+        else:
+            var = ds.variables[varname][timestep].filled(np.nan)
+            
+        if model == 'MPAS' and len(var.shape) == 4 and varname != 'RH': 
+            var = var.transpose((0, 3, 1, 2))
+            
+    return var
+
+def read_var_latlon(infile, model, varname, timestep):
+    pass
+
+def read_latlon(infile):
+    pass
+
+def varlist_3D():
+    pass
+
+def varlist_2D():
+    pass
+
+def create_random_indices():
+    pass
+
+def combine_masks():
+    pass
+
+def get_ocean_mask():
+    pass
+
+def get_nan_mask():
+    pass
+
+def get_surface_ind():
+    pass
+
+def get_timesteps():
+    pass
+    
+
 def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heightfile, landmaskfile,\
                                variables, lonlatbox, vinterp, data_dir, sample_days, new_sampling_idx, timesteps=None, **kwargs):
     """ Selects a subset of random profiles from (horizontally interpolated) model fields, sorts them by their integrated
@@ -29,7 +146,7 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
     
     logger.info('Get dimensions')
     # height
-    height = atools.read_var(heightfile, model, 'target_height')
+    height = read_var(heightfile, model, 'target_height')
     num_levels = height.shape[0]
     if height[0] < height[-1]:
         surface = 0
@@ -86,10 +203,10 @@ def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heigh
         logger.info('Ocean mask')
         # get ocean_mask
         ocean_mask = np.logical_not(
-            np.squeeze(atools.read_var(landmaskfile, model, 'land_mask'))
+            np.squeeze(read_var(landmaskfile, model, 'land_mask'))
         )
-        ocean_lon = atools.read_var(landmaskfile, model, 'lon')
-        ocean_lat = atools.read_var(landmaskfile, model, 'lat')
+        ocean_lon = read_var(landmaskfile, model, 'lon')
+        ocean_lat = read_var(landmaskfile, model, 'lat')
         ocean_lat_ind = np.where(np.logical_and(ocean_lat >= -30, ocean_lat <= 30))[0]
         #ocean_lat_ind = np.where(np.logical_and(ocean_lat >= lonlatbox[2], ocean_lat <= lonlatbox[3]))[0]
         #ocean_lon_ind = np.where(np.logical_and(ocean_lon >= lonlatbox[0], ocean_lon <= lonlatbox[1]))[0]
@@ -269,7 +386,7 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
     
     logger.info('Get dimensions')
     # height
-    height = atools.read_var(heightfile, model, 'target_height')
+    height = read_var(heightfile, model, 'target_height')
     num_levels = height.shape[0]
     if height[0] < height[-1]:
         surface = 0
@@ -330,13 +447,13 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
     logger.info('Ocean mask')
     # get ocean_mask
     ocean_mask = np.logical_not(
-        np.squeeze(atools.read_var(landmaskfile, model, 'land_mask'))
+        np.squeeze(read_var(landmaskfile, model, 'land_mask'))
     )
 
-    ocean_lon = atools.read_var(landmaskfile, model, 'lon')
-    ocean_lat = atools.read_var(landmaskfile, model, 'lat')
+    ocean_lon = read_var(landmaskfile, model, 'lon')
+    ocean_lat = read_var(landmaskfile, model, 'lat')
     ocean_lat_ind = np.where(np.logical_and(ocean_lat >= lonlatbox[2], ocean_lat <= lonlatbox[3]))[0]
-    ocean_lon = atools.read_var(landmaskfile, model, 'lon')
+    ocean_lon = read_var(landmaskfile, model, 'lon')
     ocean_lon_ind = np.where(np.logical_and(ocean_lon >= lonlatbox[0], ocean_lon <= lonlatbox[1]))[0]
     ocean_mask = ocean_mask[ocean_lat_ind][:, ocean_lon_ind].astype(int)
 
