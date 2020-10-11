@@ -341,7 +341,7 @@ def select_random_profiles_new(model, run, variables, time_period, data_dir, num
 
     # make sure that all variables needed to calculate IWV are in the list
     for v in ['TEMP', 'PRES', 'QV']:
-        if v not in variables:
+        if new_sampling_idx and v not in variables:
             variables.append(v)
             
     # longitudes and latitudes to sample from
@@ -354,6 +354,7 @@ def select_random_profiles_new(model, run, variables, time_period, data_dir, num
     variables_3D = [v for v in variables if v in list_3D]
 
     # filenames
+    profiles = {}
     infiles = {}
     for variable in variables:
         infiles[variable] = filenames.preprocessed_output(data_dir, model, run, variable, num_samples, time_period)
@@ -397,26 +398,26 @@ def select_random_profiles_new(model, run, variables, time_period, data_dir, num
 
         # Random indices
         lat_inds, lon_inds = create_random_indices(total_mask, num_timesteps, num_samples_timestep)
+        
+        # Select lons, lats
+        profiles['lat'] = np.ones((num_samples_exact)) * np.nan
+        profiles['lon'] = np.ones((num_samples_exact)) * np.nan    
+        for j, t in enumerate(timesteps):
+            start = j * num_samples_timestep
+            end = start + num_samples_timestep
+            profiles['lat'][start:end] = lat[lat_inds[j]]
+            profiles['lon'][start:end] = lon[lon_inds[j]]
 
     else:
         logger.info('Reas sampling indices from file')
         lat_inds, lon_inds, sort_inds = read_random_indices(random_ind_file)
-        num_timesteps = lon_idx.shape[0]
-        num_samples_timestep = lon_idx.shape[1]
+        num_timesteps = lon_inds.shape[0]
+        timesteps = np.arange(num_timesteps)
+        num_samples_timestep = lon_inds.shape[1]
         num_samples_exact = num_samples_timestep * num_timesteps
 
 
     logger.info('Select random profiles')
-    profiles = {}
-
-    # lons, lats
-    profiles['lat'] = np.ones((num_samples_exact)) * np.nan
-    profiles['lon'] = np.ones((num_samples_exact)) * np.nan    
-    for j, t in enumerate(timesteps):
-        start = j * num_samples_timestep
-        end = start + num_samples_timestep
-        profiles['lat'][start:end] = lat[lat_inds[j]]
-        profiles['lon'][start:end] = lon[lon_inds[j]]
 
     # Variables
     for i, var in enumerate(variables):
@@ -442,7 +443,11 @@ def select_random_profiles_new(model, run, variables, time_period, data_dir, num
 
     # sort by IWV and save output
     logger.info('Sort and save to files')
-    for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
+    if new_sampling_idx:
+        variables_out = variables + ['IWV', 'lon', 'lat']
+    else:
+        variables_out = variables
+    for i, var in enumerate(variables_out):
         outname = filenames.selected_profiles(data_dir, model, run, var, num_samples, time_period, filename_suffix)
         profiles_sorted = profiles[var][sort_inds]
         save_random_profiles(outname, profiles_sorted, var, height)
