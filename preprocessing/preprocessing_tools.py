@@ -24,7 +24,7 @@ def config():
     """ Reads specifications for processing from confing.json and returns a dictionary
     with specifications.
     """
-    with open('/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/config.json') as handle:
+    with open('/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/preprocessing/preprocessing_config.json') as handle:
         config = json.loads(handle.read())
     
     return config
