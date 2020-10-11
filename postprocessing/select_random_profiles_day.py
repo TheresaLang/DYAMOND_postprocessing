@@ -17,30 +17,18 @@
 # separately for each day
 
 import os
-import numpy as np
-from importlib import reload
-from os.path import join
 import postprocessing_tools as ptools
-import analysis_tools as atools
-import filelists
 
-ptools = reload(ptools)
-atools = reload(atools)
+ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
+timesteps = np.arange(8 * ID, 8 * (ID + 1)) # timesteps corresponding to one day
+
 # load configuration
 config = ptools.config()
+# add timesteps and filename suffix to config
+config['timesteps'] = timesteps
+config['filename_suffix'] = ID
 
-ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to day
-num_samples = config['num_samples']
-num_timesteps = config['num_timesteps']
-time_period = config['time_period']
-models, runs, infiles, outfiles = filelists.get_samplefilelist(num_samples, day=ID, **config)
+model = config['models'][0]
+run = config['runs'][0]
 
-model = models[0]
-run = runs[0]
-infile = infiles[0]
-outfile = outfiles[0]
-timesteps = np.arange(8 * ID, 8 * (ID + 1))
-heightfile = join(config['data_dir'], model, 'target_height.nc')
-landmaskfile = join(config['data_dir'], 'ICON', 'land_mask.nc')
-
-ptools.select_random_profiles(model, run, num_samples, infile, outfile, heightfile, landmaskfile, timesteps=timesteps, **config)
+ptools.select_random_profiles_new(model, run, **config)
