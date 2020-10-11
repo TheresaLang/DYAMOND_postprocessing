@@ -14,24 +14,37 @@
 ##SBATCH --mail-type=FAIL      # Notify user by email in case of job failure
 
 # Script to randomly select profiles from horizontally interpolated DYAMOND data
-
 import os
-import numpy as np
-from importlib import reload
-from os.path import join
 import postprocessing_tools as ptools
-import analysis_tools as atools
-import filelists
-
-ptools = reload(ptools)
-atools = reload(atools)
-# load configuration
-config = ptools.config()
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
-num_samples = config['num_samples']
-models, runs, infiles, outfiles = filelists.get_samplefilelist(num_samples, **config)
-heightfile = join(config['data_dir'], models[ID], 'target_height.nc')
-landmaskfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/land_mask.nc'
 
-ptools.select_random_profiles(models[ID], runs[ID], num_samples, infiles[ID], outfiles[ID], heightfile, landmaskfile, **config)
+# load configuration
+config = ptools.config()
+# add timesteps and filename suffix to config
+config['timesteps'] = None
+config['filename_suffix'] = ''
+
+models = config['models']
+runs = config['runs']
+
+ptools.select_random_profiles_new(model=models[ID], run=runs[ID], **config)
+
+
+# import os
+# import numpy as np
+# from os.path import join
+# import postprocessing_tools as ptools
+# import filelists
+
+# reload(ptools)
+# # load configuration
+# config = ptools.config()
+
+# ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
+# num_samples = config['num_samples']
+# models, runs, infiles, outfiles = filelists.get_samplefilelist(num_samples, **config)
+# heightfile = join(config['data_dir'], models[ID], 'target_height.nc')
+# landmaskfile = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/ICON/land_mask.nc'
+
+# ptools.select_random_profiles(models[ID], runs[ID], num_samples, infiles[ID], outfiles[ID], heightfile, landmaskfile, **config)
