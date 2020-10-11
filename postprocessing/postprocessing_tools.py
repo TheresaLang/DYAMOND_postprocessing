@@ -1,20 +1,18 @@
 import numpy as np
 import pandas as pd
 import os
-import glob
 import logging
 import json
 import typhon
 import random
 import pickle
 import filelists
-import analysis_tools as atools
-from time import sleep
-from scipy.interpolate import interp1d
-from netCDF4 import Dataset
-import matplotlib.pyplot as plt
-from moisture_space import utils
 import netCDF_tools as nctools
+import xarray as xr
+import filenames
+from netCDF4 import Dataset
+from moisture_space import utils
+from importlib import reload
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -84,36 +82,359 @@ def read_var_timestep(infile, model, varname, timestep):
             
     return var
 
-def read_var_latlon(infile, model, varname, timestep):
-    pass
+def read_var_timestep_latlon(infile, model, variable, timestep, lat_inds, lon_inds):
+    """
+    """
+    variables_3D = varlist_3D()
+    if variable in variables_3D:
+        is_3D = True
+    else:
+        is_3D = False
+        
+    if variable == 'SST':
+        timestep = timestep // 2
+        
+    if is_3D:
+        with Dataset(infile) as ds:
+            if model == 'MPAS' and variable in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
+                profiles = ds.variables[variable][timestep][lat_inds, lon_inds, :].filled(np.nan).transpose([1, 0])
+            else:
+                if model == 'SAM' and variable == 'PRES':
+                    pres_mean = np.expand_dims(ds.variables['p'][:], 1) * 1e2
+                    pres_pert = ds.variables['PP'][timestep][:, lat_inds, lon_inds].filled(np.nan)
+                    profiles = pres_mean + pres_pert
+                else:
+                    profiles = ds.variables[variable][timestep][:, lat_inds, lon_inds].filled(np.nan)
+                        
+        if model == 'SAM' and var in ['QV', 'QI', 'QC']:
+            profiles *= 1e-3
+        profiles = profiles.T
+    
+    else:
+        with Dataset(infile) as ds:
+            if model == 'NICAM' and var != 'SST':
+                profiles = ds.variables[variable][timestep][0, lat_inds, lon_inds].filled(np.nan)
+            elif model == 'IFS' and var == 'SURF_PRES':
+                profiles = np.exp(ds.variables[variable][timestep][0, lat_inds, lon_inds].filled(np.nan))
+            else:
+                profiles = ds.variables[variable][timestep][lat_inds, lon_inds].filled(np.nan)
+                                                       
+    return profiles
 
+def read_dimensions(infile, varname):
+    """
+    """
+    with Dataset(infile) as ds:
+        dimensions = ds.variables[varname].shape
+        
+    return dimensions
+    
+    
 def read_latlon(infile):
-    pass
+    """
+    """
+    with Dataset(infile) as ds:
+        lat = ds.variables['lat'][:].filled(np.nan)
+        lon = ds.variables['lon'][:].filled(np.nan)
+        
+    return lat, lon
 
-def varlist_3D():
-    pass
+def save_random_profiles(outname, profiles, variable, height):
+    """
+    """
+    profile_inds = np.arange(profiles.shape[0])
+    
+    ds = xr.Dataset(
+        {
+            variable: (["profiles_tot", "levels"], profiles),
+        },
+        coords = {
+            "profiles_tot": (["profiles_tot"], profile_inds),
+            "levels": (["levels"], height)
+        }
+    )
+    ds.to_netcdf(outname)
+    
+def read_random_profiles(infile):
+    """
+    """
+    ds = xr.from_netcdf(infile)
+    height = ds.coords['levels']
+    variable = ds.keys[0]
+    profiles = ds[variable].data
+    
+    return height, profiles
 
 def varlist_2D():
-    pass
-
-def create_random_indices():
-    pass
-
-def combine_masks():
-    pass
-
-def get_ocean_mask():
-    pass
-
-def get_nan_mask():
-    pass
-
-def get_surface_ind():
-    pass
-
-def get_timesteps():
-    pass
+    """
+    """
+    varlist = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'TQI', 'TQC', 'TQG',\
+               'TQS', 'TQR', 'SST', 'SURF_PRES', 'lat', 'lon', 'idx']
     
+    return varlist
+
+def varlist_3D():
+    """
+    """
+    varlist = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'QS', 'QG', 'QR', 'RH',\
+               'W', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v',\
+               'A_RH_h', 'A_QV_h', 'U', 'V', 'UV', 'dRH_dx', 'dRH_dy', 'dRH_dz']
+    
+    return varlist
+
+def varlist_log_average():
+    """
+    """
+    varlist = ['PRES', 'QV', 'H2O']
+    
+    return varlist
+    
+def create_random_indices(mask, num_timesteps, num_samples_per_timestep):
+    """
+    """
+    
+    mask_ind = np.where(mask)
+    lat_not_masked = mask_ind[0]
+    lon_not_masked = mask_ind[1]
+
+    lat_inds = np.zeros((num_timesteps, num_samples_per_timestep)).astype(int)
+    lon_inds = np.zeros((num_timesteps, num_samples_per_timestep)).astype(int)
+
+    logger.info('Get indices')
+    for t in range(num_timesteps):
+        r = random.sample(list(zip(lat_not_masked, lon_not_masked)), num_samples_per_timestep)
+        lat_inds[t], lon_inds[t] = zip(*r)
+        
+    return lat_inds, lon_inds
+
+def read_random_indices(infile):
+    """
+    """
+    ds = xr.load_dataset(infile)
+    lat_inds = ds['lat_inds'].data
+    lon_inds = ds['lon_inds'].data
+    sort_inds = ds['sort_inds'].data
+    
+    return lat_inds, lon_inds, sort_inds
+
+def save_random_indices(outfile, lat_inds, lon_inds, sort_inds):
+    """
+    """
+    profile_inds_tot = np.arange(sort_inds.shape[0])
+    profile_inds_timestep = np.arange(lat_inds.shape[1])
+    timesteps = np.arange(lat_inds.shape[0])
+    # Create xarray.Dataset
+    ds = xr.Dataset(
+        {
+            "lat_inds": (["timesteps", "profiles_timestep"], lat_inds),
+            "lon_inds": (["timesteps", "profiles_timestep"], lon_inds),
+            "sort_inds": (["profiles_tot"], sort_inds)
+        },
+        coords = {
+            "timesteps": (["timesteps"], timesteps),
+            "profiles_timestep": (["profiles_timestep"], profile_inds_timestep),
+            "profiles_tot": (["profiles_tot"], profile_inds_tot)
+        }
+    )
+    # Save Dataset
+    ds.to_netcdf(outfile)
+    
+def get_not_nan_mask(field):
+    """
+    """
+    return np.logical_not(np.isnan(field))
+
+def get_latlon_mask(lat, lon, lonlatbox):
+    """
+    """
+    lat_reg_ind = np.logical_and(lat >= lonlatbox[2], lat <= lonlatbox[3])
+    lon_reg_ind = np.logical_and(lon >= lonlatbox[0], lon <= lonlatbox[1])
+    lat_mask = np.tile(lat_reg_ind, (len(lon), 1)).T
+    lon_mask = np.tile(lon_reg_ind, (len(lat), 1))
+    latlon_mask = np.logical_and(lon_mask, lat_mask)
+    
+    return latlon_mask
+
+def get_ocean_mask(model, landmask_file):
+    """
+    """
+    trop_lat = [-30, 30]
+    ocean_mask = np.logical_not(np.squeeze(read_var(landmask_file, model, 'land_mask')))
+    ocean_lat, ocean_lon = read_latlon(landmask_file)
+    # cut out tropical region
+    ocean_lat_ind = np.where(np.logical_and(ocean_lat >= trop_lat[0], ocean_lat <= trop_lat[1]))[0]
+    ocean_mask = ocean_mask[ocean_lat_ind].astype(int)
+    
+    return ocean_mask
+
+def combine_masks(mask_list):
+    """
+    """
+    combined_mask = mask_list[0]
+    for mask in mask_list[1:]:
+        combined_mask = np.logical_and(combined_mask, mask)
+        
+    return combined_mask
+
+def get_surface_ind(height):
+    """
+    """
+    if height[0] < height[-1]:
+        surface_ind = 0
+    else:
+        surface_ind = -1
+    
+    return surface_ind
+
+
+def get_timesteps(model, timestep_param, timesteps_tot, sample_days):
+    """
+    """
+    if timestep_param is not None:
+        timesteps = timestep_param
+        num_timesteps = len(timesteps)
+    else:
+        if sample_days.lower() == 'all':
+            num_timesteps = timesteps_tot
+            timesteps = np.arange(num_timesteps)
+        elif sample_days.lower() == 'first10':
+            num_timesteps = 80
+            timesteps = np.arange(0, num_timesteps)
+        elif sample_days.lower() == 'last10':
+            num_timesteps = 80
+            timesteps = np.arange(dimensions[0] - 80, dimensions[0])
+            
+    if model in ['MPAS', 'IFS', 'ARPEGE']:
+        # For these models there is one timestep less for OLR and STOA 
+        timesteps = timesteps[:-1]
+        num_timesteps = num_timesteps - 1
+            
+    return timesteps, num_timesteps
+
+def percentiles_from_number(num_percentiles):
+    """
+    """
+    start = 100 / num_percentiles
+    step = 100 / num_percentiles
+    stop = 100 + 0.5 * step
+    percentiles = np.arange(start, stop, step)
+    
+    return percentiles
+    
+    
+def select_random_profiles_new(model, run, variables, time_period, data_dir, num_samples,
+                               new_sampling_idx, sample_days='all', timesteps=None, 
+                               filename_suffix='', **kwargs):
+    """
+    """
+
+    # make sure that all variables needed to calculate IWV are in the list
+    for v in ['TEMP', 'PRES', 'QV']:
+        if v not in variables:
+            variables.append(v)
+            
+    # longitudes and latitudes to sample from
+    lonlatbox = [-180, 180, -29.9, 29.9]
+
+    # lists of variables (2D and 3D)
+    list_2D = varlist_2D()
+    list_3D = varlist_3D()
+    variables_2D = [v for v in variables if v in list_2D]
+    variables_3D = [v for v in variables if v in list_3D]
+
+    # filenames
+    infiles = {}
+    for variable in variables:
+        infiles[variable] = filenames.preprocessed_output(data_dir, model, run, variable, num_samples, time_period)
+    height_file = filenames.heightfile(data_dir, model)
+    landmask_file = filenames.landmaskfile(data_dir)
+    random_ind_file = filenames.random_ind(data_dir, model, run, num_samples, time_period)
+    # suffix for outfiles
+    if not filename_suffix and sample_days != 'all':
+        filename_suffix = sample_days
+    
+    # Test file to get some general information (lats, lons, dimensions) from
+    test_var = variables_3D[0]
+    test_file = infiles[test_var]
+    tot_timesteps_avail = read_dimensions(test_file, test_var)[0]
+
+    logger.info('Read height')
+    height = read_var(height_file, model, 'target_height')
+    num_levels = len(height)
+    surface_ind = get_surface_ind(height)
+
+    if new_sampling_idx:
+        logger.info('Create new sampling indices')
+        # lats and lons
+        lat, lon = read_latlon(test_file)
+
+        # timesteps
+        timesteps, num_timesteps = get_timesteps(model, timesteps, tot_timesteps_avail, sample_days)
+
+        # number of samples per timestep
+        num_samples_timestep = int(num_samples / num_timesteps)
+        num_samples_exact = num_samples_timestep * num_timesteps
+
+        # Dummy field to create NaN mask
+        test_field = read_var_timestep(test_file, model, test_var, timestep=0)
+
+        # Create masks
+        not_nan_mask = get_not_nan_mask(test_field[surface_ind])
+        ocean_mask = get_ocean_mask(model, landmask_file)
+        latlon_mask = get_latlon_mask(lat, lon, lonlatbox)
+        total_mask = combine_masks([not_nan_mask, ocean_mask, latlon_mask])
+
+        # Random indices
+        lat_inds, lon_inds = create_random_indices(total_mask, num_timesteps, num_samples_timestep)
+
+    else:
+        logger.info('Reas sampling indices from file')
+        lat_inds, lon_inds, sort_inds = read_random_indices(random_ind_file)
+        num_timesteps = lon_idx.shape[0]
+        num_samples_timestep = lon_idx.shape[1]
+        num_samples_exact = num_samples_timestep * num_timesteps
+
+
+    logger.info('Select random profiles')
+    profiles = {}
+
+    # lons, lats
+    profiles['lat'] = np.ones((num_samples_exact)) * np.nan
+    profiles['lon'] = np.ones((num_samples_exact)) * np.nan    
+    for j, t in enumerate(timesteps):
+        start = j * num_samples_timestep
+        end = start + num_samples_timestep
+        profiles['lat'][start:end] = lat[lat_inds[j]]
+        profiles['lon'][start:end] = lon[lon_inds[j]]
+
+    # Variables
+    for i, var in enumerate(variables):
+        logger.info(var)
+        if var in variables_2D:
+            profiles[var] = np.ones((num_samples_exact)) * np.nan
+        elif var in variables_3D:
+            profiles[var] = np.ones((num_samples_exact, num_levels)) * np.nan
+
+        for j, t in enumerate(timesteps):
+            start = j * num_samples_timestep
+            end = start + num_samples_timestep
+            profiles[var][start:end] = read_var_timestep_latlon(infiles[var], model, var, t, lat_inds[t], lon_inds[t])
+
+    if new_sampling_idx:
+        logger.info('Calculate IWV')
+        profiles['IWV'] = utils.calc_IWV(profiles['QV'].T, profiles['TEMP'].T, profiles['PRES'].T, height)
+        logger.info('Get indices for IWV sorting')
+        sort_inds = np.argsort(profiles['IWV'])  
+        save_random_indices(random_ind_file, lat_inds, lon_inds, sort_inds)
+
+    #FIXME Add QV_sat, IWV_sat, CRH, IWP, H_tropo, UV, dRH_dz 
+
+    # sort by IWV and save output
+    logger.info('Sort and save to files')
+    for i, var in enumerate(variables + ['IWV', 'lon', 'lat']):
+        outname = filenames.selected_profiles(data_dir, model, run, var, num_samples, time_period, filename_suffix)
+        profiles_sorted = profiles[var][sort_inds]
+        save_random_profiles(outname, profiles_sorted, var, height)
 
 def select_random_profiles(model, run, num_samples_tot, infiles, outfiles, heightfile, landmaskfile,\
                                variables, lonlatbox, vinterp, data_dir, sample_days, new_sampling_idx, timesteps=None, **kwargs):
@@ -566,6 +887,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         num_samples (num): number of randomly selected profiles
         data_dir (str): Path to output directory
     """
+    #TODO Include wrong masks and set to NaN
     logger.info(f'{model}-{run}')
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     start_date = time[0].strftime("%m%d")
