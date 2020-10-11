@@ -11,7 +11,7 @@ import netCDF_tools as nctools
 import xarray as xr
 import filenames
 from netCDF4 import Dataset
-from moisture_space import utils
+from moisture_space import moisture_space, utils
 from importlib import reload
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
@@ -166,13 +166,17 @@ def save_random_profiles(outname, profiles, variable, height):
         
     ds.to_netcdf(outname)
     
-def read_random_profiles(infile):
+def read_random_profiles(infile, variable):
     """
     """
     ds = xr.load_dataset(infile)
-    height = ds.coords['levels']
     variable = list(ds.keys())[0]
     profiles = ds[variable].data
+    
+    if variable in varlist_3D():
+        height = ds.coords['levels'].data
+    else:
+        height = np.array([0.])
     
     return height, profiles
 
@@ -905,505 +909,131 @@ def select_random_profiles_cloudsat(model, run, num_samples_tot, infiles, outfil
             )
 
 def advection_for_random_profiles(model, run, time_period, num_samples, data_dir, **kwargs):
-    """ Calculate vertical and horizontal advection of QV and RH for randomly selected profiles.
-    
-    Parameters:
-        model (str): name of model
-        run (str): name of model run
-        time_period (list of str): list containing start and end of time period as string 
-            in the format YYYY-mm-dd 
-        num_samples (num): number of randomly selected profiles
-        data_dir (str): Path to output directory
     """
-    #TODO Include wrong masks and set to NaN
-    logger.info(f'{model}-{run}')
-    time = pd.date_range(time_period[0], time_period[1], freq='1D')
-    start_date = time[0].strftime("%m%d")
-    end_date = time[-1].strftime("%m%d")
+    """
+    input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES']
+    advected_variables = ['QV', 'RH', 'TEMP', 'PRES']
+    advection_terms = ['A_QV_h', 'A_QV_v', 'A_RH_h', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v']
 
-    logger.info('Input and output variables and filenames')
-    input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES'] # 'QC', 'QI'
-    output_variables = ['A_QV_h', 'A_RH_h', 'A_QV_v', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v', 'dRH_dx', 'dRH_dy'] # 'A_T_h', 'A_T_v', 'DT_Dt_h', 'DT_Dt_v', 'A_QC_h', 'A_QC_v', 'A_QI_h', 'A_QI_v'
-    if model in ['IFS', 'FV3', 'ARPEGE', 'GEOS', 'ERA5']:
-        filename = '{}-{}_{}_hinterp_vinterp_merged_{}-{}.nc'
-    else:
-        filename = '{}-{}_{}_hinterp_merged_{}-{}.nc'
-    filename_out = '{}-{}_{}_sample_{}_{}-{}.nc'
-    filename_lat_idx = filename_out.format(model, run, 'ind_lat', num_samples, start_date, end_date)
-    filename_lat_idx = os.path.join(data_dir, model, 'random_samples', filename_lat_idx)
-    filename_lon_idx = filename_out.format(model, run, 'ind_lon', num_samples, start_date, end_date)
-    filename_lon_idx = os.path.join(data_dir, model, 'random_samples', filename_lon_idx)
-    filename_sort_idx = filename_out.format(model, run, 'sort_ind', num_samples, start_date, end_date)
-    filename_sort_idx = os.path.join(data_dir, model, 'random_samples', filename_sort_idx)
-    testfile = os.path.join(data_dir, model, filename.format(model, run, input_variables[0], start_date, end_date))
-    heightfile = filelists.get_path2targetheightfile(model, data_dir)
-    filenames = {}
-    outnames = {}
-    
-    for var in input_variables:
-        if model in ['ICON', 'MPAS'] and var == 'W':
-            filenames[var] = os.path.join(data_dir, model,
-                                          filename.format(model, run, 'WHL', start_date, end_date)
-                                         )
-        else:
-            filenames[var] = os.path.join(data_dir, model,
-                                          filename.format(model, run, var, start_date, end_date)
-                                         )
-    for var in output_variables:
-        outnames[var] = os.path.join(data_dir, model, 'random_samples',
-                                     filename_out.format(model, run, var, num_samples, start_date, end_date)
-                                     )
+    logger.info('Read random indices')
+    random_ind_file = filenames.random_ind(data_dir, model, run, num_samples, time_period)
+    lat_inds, lon_inds, sort_inds = read_random_indices(random_ind_file)
+    num_timesteps = lat_inds.shape[0]
+    num_samples_timestep = lat_inds.shape[1]
 
-    logger.info('Read lats and lons')
-    with Dataset(testfile) as ds:
-        lat = ds.variables['lat'][:]
-        lon = ds.variables['lon'][:]
-        if model == 'MPAS':
-            num_levels = ds.variables[input_variables[0]].shape[3]
-        else:
-            num_levels = ds.variables[input_variables[0]].shape[1]
-        
-    with Dataset(heightfile) as ds:
-        height = ds.variables['target_height'][:]
-
-    logger.info('Read indices from files')
-    with Dataset(filename_sort_idx) as ds:
-        sort_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
-
-    with Dataset(filename_lat_idx) as ds:
-        lat_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
-
-    with Dataset(filename_lon_idx) as ds:
-        lon_idx = ds.variables['idx'][:].filled(np.nan).astype(int)
-
-    num_timesteps = lon_idx.shape[0]
-    num_samples_timestep = lon_idx.shape[1]
-    num_samples_tot = num_samples_timestep * num_timesteps
-
+    logger.info('Read random profiles')
     profiles = {}
-    profiles['lat'] = np.ones((num_samples_tot)) * np.nan
-
-    logger.info('Read latitudes from file')
-    for t in range(num_timesteps):
-        start = t * num_samples_timestep
-        end = start + num_samples_timestep
-        profiles['lat'][start:end] = lat[lat_idx[t]]
+    for var in ['lat', 'lon']+input_variables:
+        filename = filenames.selected_profiles(data_dir, model, run, var, num_samples, time_period, '')
+        height, profiles[var] = read_random_profiles(filename, var)
 
     logger.info('Calculate distance to next grid points')
     dx = 0.1
     dy = 0.1
     profiles['dx'] = 111000 * dx * np.cos(np.deg2rad(profiles['lat']))
-    profiles['dy'] = 111000 * dy        
+    profiles['dy'] = 111000 * dy
 
-    logger.info('Allocate array for selected profiles')
-    for var in list(set(input_variables) | set(output_variables)):
-        profiles[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
-        #profiles_sorted[var] = np.ones((num_levels, num_samples_timestep * num_timesteps)) * np.nan
-
-    logger.info('Read variables from files')
-    for var in input_variables:
-        for t in range(num_timesteps):
-            start = t * num_samples_timestep
-            end = start + num_samples_timestep
-            with Dataset(filenames[var]) as ds:
-                if model == 'SAM' and var == 'PRES':
-                    pres_mean = np.expand_dims(ds.variables['p'][:], 1) * 1e2
-                    pres_pert = ds.variables['PP'][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
-                    profiles[var][:, start:end] = pres_mean + pres_pert
-                elif model == 'MPAS' and var in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
-                    profiles[var][:, start:end] = ds.variables[var][t][lat_idx[t], lon_idx[t], :].filled(np.nan).T
-                else:
-                    profiles[var][:, start:end] = ds.variables[var][t][:, lat_idx[t], lon_idx[t]].filled(np.nan)
-    if model == 'SAM':
-        profiles['QV'] *= 1e-3
-
-    if 'QC' in input_variables:
-        logger.info('Set condensate to zero in unsaturated cases')
-        unsat = profiles['RH'] < 1
-        profiles['QC'][unsat] = 0.
-        profiles['QI'][unsat] = 0.
-        profiles['A_QC_v'] = -profiles['W'] * np.gradient(profiles['QC'], height, axis=0)
-        profiles['A_QI_v'] = -profiles['W'] * np.gradient(profiles['QI'], height, axis=0)
-    
     logger.info('Calculate vertical transport terms')
+    # constants
     R = typhon.constants.gas_constant_water_vapor
     cp = typhon.constants.isobaric_mass_heat_capacity
     L = typhon.constants.heat_of_vaporization
     rho = profiles['PRES'] / (profiles['TEMP'] * R) 
-    #rho = utils.calc_density_moist_air(
-    #    profiles['PRES'],
-    #    profiles['TEMP'], 
-    #    profiles['QV']
-    #)
-    
-    profiles['A_RH_v'] = -profiles['W'] * np.gradient(profiles['RH'], height, axis=0)
-    profiles['A_QV_v'] = -profiles['W'] * np.gradient(profiles['QV'], height, axis=0)
+    # advection terms
+    profiles['A_RH_v'] = -profiles['W'] * np.gradient(profiles['RH'], height, axis=1)
+    profiles['A_QV_v'] = -profiles['W'] * np.gradient(profiles['QV'], height, axis=1)
     profiles['DRH_Dt_v'] = utils.drh_dt(
-            profiles['TEMP'], 
-            profiles['PRES'], 
-            profiles['RH'],
-            profiles['W']  
-        )
-    
-    if 'A_T_v' in output_variables:
-        profiles['A_T_v'] = -profiles['W'] * np.gradient(profiles['TEMP'], height, axis=0)
-    if 'DT_Dt_v' in output_variables:
-        profiles['DT_Dt_v'] = -typhon.constants.g / cp * profiles['W']
-    
-    logger.info('Read QV and RH from files and calculate horizontal transport terms')
+            profiles['TEMP'].T, 
+            profiles['PRES'].T, 
+            profiles['RH'].T,
+            profiles['W'].T  
+        ).T
 
-    for t in range(num_timesteps):
+    logger.info('Read neighboring profiles and calculate horizontal transport terms')
+    d_dx = {v: np.zeros_like(profiles['TEMP']) for v in advected_variables}
+    d_dy = {v: np.zeros_like(profiles['TEMP']) for v in advected_variables}
+    for var in advected_variables:
+        filename = filenames.preprocessed_output(data_dir, model, run, var, num_samples, time_period)
+        for t in range(num_timesteps):
+            start = t * num_samples_timestep
+            end = start + num_samples_timestep
+            lat_inds_before, lat_inds_next, lon_inds_before, lon_inds_next = get_latlon_inds_neighbors(lat_inds[t], lon_inds[t])
 
-        start = t * num_samples_timestep
-        end = start + num_samples_timestep
-        lon_idx_next = lon_idx[t] + 1
-        lon_idx_next[lon_idx_next == len(lon)] = 0
-        lon_idx_before = lon_idx[t] - 1
-        lon_idx_before[lon_idx_before < 0] = len(lon) - 1
-        with Dataset(filenames['QV']) as ds:
-            if model == 'MPAS':
-                dQdx = (ds.variables['QV'][t][lat_idx[t], lon_idx_next, :]
-                        - ds.variables['QV'][t][lat_idx[t], lon_idx_before, :]).T / profiles['dx'][start:end]
-                dQdy = (ds.variables['QV'][t][lat_idx[t] + 1, lon_idx[t], :]
-                        - ds.variables['QV'][t][lat_idx[t] - 1, lon_idx[t], :]).T / profiles['dy']
-                
-            else:
-                dQdx = (ds.variables['QV'][t][:, lat_idx[t], lon_idx_next]
-                        - ds.variables['QV'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
-                dQdy = (ds.variables['QV'][t][:, lat_idx[t] + 1, lon_idx[t]]
-                        - ds.variables['QV'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
+            var_lat_before = read_var_timestep_latlon(filename, model, var, t, lat_inds_before, lon_inds[t])
+            var_lat_next = read_var_timestep_latlon(filename, model, var, t, lat_inds_next, lon_inds[t])
+            var_lon_before = read_var_timestep_latlon(filename, model, var, t, lat_inds[t], lon_inds_before)
+            var_lon_next = read_var_timestep_latlon(filename, model, var, t, lat_inds[t], lon_inds_next)
 
-            profiles['A_QV_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQdx + profiles['V'][:, start:end] * dQdy)
-            
-        with Dataset(filenames['RH']) as ds:
-            RH_next_lon = ds.variables['RH'][t][:, lat_idx[t], lon_idx_next]
-            RH_before_lon = ds.variables['RH'][t][:, lat_idx[t], lon_idx_before]
-            RH_next_lat = ds.variables['RH'][t][:, lat_idx[t] + 1, lon_idx[t]]
-            RH_before_lat = ds.variables['RH'][t][:, lat_idx[t] - 1, lon_idx[t]]
-            dRHdx = (RH_next_lon
-                     - RH_before_lon) / profiles['dx'][start:end]
-            dRHdy = (RH_next_lat
-                    - RH_before_lat) / profiles['dy']
+            d_dx[var][start:end] = (var_lat_next - var_lat_before) / profiles['dy']
+            d_dy[var][start:end] = (var_lon_next - var_lon_before) / np.expand_dims(profiles['dx'][start:end], 1)
 
-            profiles['A_RH_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dRHdx + profiles['V'][:, start:end] * dRHdy)
-            profiles['dRH_dx'][:, start:end] = dRHdx
-            profiles['dRH_dy'][:, start:end] = dRHdy
-            
-        with Dataset(filenames['TEMP']) as ds:
-            if model == 'MPAS':
-                dTdx = (ds.variables['TEMP'][t][lat_idx[t], lon_idx_next, :]
-                         - ds.variables['TEMP'][t][lat_idx[t], lon_idx_before, :]).T / profiles['dx'][start:end]
-                dTdy = (ds.variables['TEMP'][t][lat_idx[t] + 1, lon_idx[t], :]
-                        - ds.variables['TEMP'][t][lat_idx[t] - 1, lon_idx[t], :]).T / profiles['dy']
-            else:
-                dTdx = (ds.variables['TEMP'][t][:, lat_idx[t], lon_idx_next]
-                         - ds.variables['TEMP'][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
-                dTdy = (ds.variables['TEMP'][t][:, lat_idx[t] + 1, lon_idx[t]]
-                        - ds.variables['TEMP'][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
-            
-        with Dataset(filenames['PRES']) as ds:
-            if model == 'SAM':
-                pname = 'PP'
-            else:
-                pname = 'PRES'
-                
-            if model == 'MPAS':
-                dPdx = (ds.variables[pname][t][lat_idx[t], lon_idx_next, :]
-                        - ds.variables[pname][t][lat_idx[t], lon_idx_before, :]).T / profiles['dx'][start:end]
-                dPdy = (ds.variables[pname][t][lat_idx[t] + 1, lon_idx[t], :]
-                        - ds.variables[pname][t][lat_idx[t] - 1, lon_idx[t], :]).T / profiles['dy']
+    profiles['A_QV_h'] = -1 * (profiles['U'] * d_dx['QV'] + profiles['V'] * d_dy['QV'])
+    profiles['A_RH_h'] = -1 * (profiles['U'] * d_dx['RH'] + profiles['V'] * d_dy['RH'])
+    dPdt = d_dx['PRES'] * profiles['U'] + d_dy['PRES'] * profiles['V']
+    dTdP = -1 / rho / cp
+    profiles['DRH_Dt_h'] = (profiles['RH'] / profiles['PRES'] - profiles['RH'] * L / R / (profiles['TEMP'] ** 2) * dTdP) * dPdt    
 
-            else:
-                dPdx = (ds.variables[pname][t][:, lat_idx[t], lon_idx_next]
-                        - ds.variables[pname][t][:, lat_idx[t], lon_idx_before]) / profiles['dx'][start:end]
-                dPdy = (ds.variables[pname][t][:, lat_idx[t] + 1, lon_idx[t]]
-                        - ds.variables[pname][t][:, lat_idx[t] - 1, lon_idx[t]]) / profiles['dy']
-
-            dPdt = dPdx * profiles['U'][:, start:end] + dPdy * profiles['V'][:, start:end]
-            dTdP = -1 / rho[:, start:end] / cp
-
-            profiles['DRH_Dt_h'][:, start:end] = (profiles['RH'][:, start:end] / profiles['PRES'][:, start:end] - profiles['RH'][:, start:end] * L / R / (profiles['TEMP'][:, start:end] ** 2) * dTdP) * dPdt
-            
-            if 'A_T_h' in output_variables:
-                profiles['DT_Dt_h'][:, start:end] = dTdP * dPdt
-                profiles['A_T_h'][:, start:end] = -(dTdx * profiles['U'][:, start:end] + dTdy * profiles['V'][:, start:end])
-            
-        if 'QI' in input_variables:
-            with Dataset(filenames['QI']) as ds:
-                if model == 'MPAS':
-                    QI_next_lon = ds.variables['QI'][t][lat_idx[t], lon_idx_next, :].T
-                    QI_before_lon = ds.variables['QI'][t][lat_idx[t], lon_idx_before, :].T
-                    QI_next_lat = ds.variables['QI'][t][lat_idx[t] + 1, lon_idx[t], :].T
-                    QI_before_lat = ds.variables['QI'][t][lat_idx[t] - 1, lon_idx[t], :].T
-                    QI_next_lon[RH_next_lon < 1.] = 0.
-                    QI_before_lon[RH_before_lon < 1.] = 0.
-                    QI_next_lat[RH_next_lat < 1.] = 0.
-                    QI_before_lat[RH_before_lat < 1.] = 0.
-                    dQIdx = (QI_next_lon
-                            - QI_before_lon) / profiles['dx'][start:end]
-                    dQIdy = (QI_next_lat
-                            - QI_before_lat) / profiles['dy']
-
-                else:
-                    QI_next_lon = ds.variables['QI'][t][:, lat_idx[t], lon_idx_next]
-                    QI_before_lon = ds.variables['QI'][t][:, lat_idx[t], lon_idx_before]
-                    QI_next_lat = ds.variables['QI'][t][:, lat_idx[t] + 1, lon_idx[t]]
-                    QI_before_lat = ds.variables['QI'][t][:, lat_idx[t] - 1, lon_idx[t]]
-                    QI_next_lon[RH_next_lon < 1.] = 0.
-                    QI_before_lon[RH_before_lon < 1.] = 0.
-                    QI_next_lat[RH_next_lat < 1.] = 0.
-                    QI_before_lat[RH_before_lat < 1.] = 0.
-                    dQIdx = (QI_next_lon
-                            - QI_before_lon) / profiles['dx'][start:end]
-                    dQIdy = (QI_next_lat
-                            - QI_before_lat) / profiles['dy']
-
-                profiles['A_QI_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQIdx + profiles['V'][:, start:end] * dQIdy)
-                
-        if 'QC' in input_variables:
-            with Dataset(filenames['QC']) as ds:
-                if model == 'MPAS':
-                    QC_next_lon = ds.variables['QC'][t][lat_idx[t], lon_idx_next, :]
-                    QC_before_lon = ds.variables['QC'][t][lat_idx[t], lon_idx_before, :]
-                    QC_next_lat = ds.variables['QC'][t][lat_idx[t] + 1, lon_idx[t], :]
-                    QC_before_lat = ds.variables['QC'][t][lat_idx[t] - 1, lon_idx[t], :]
-                    QC_next_lon[RH_next_lon < 1.] = 0.
-                    QC_before_lon[RH_before_lon < 1.] = 0.
-                    QC_next_lat[RH_next_lat < 1.] = 0.
-                    QC_before_lat[RH_before_lat < 1.] = 0.
-                    dQCdx = (QC_next_lon
-                            - QC_before_lon) / profiles['dx'][start:end]
-                    dQCdy = (QC_next_lat
-                            - QC_before_lat) / profiles['dy']
-
-                else:
-                    QC_next_lon = ds.variables['QC'][t][:, lat_idx[t], lon_idx_next]
-                    QC_before_lon = ds.variables['QC'][t][:, lat_idx[t], lon_idx_before]
-                    QC_next_lat = ds.variables['QC'][t][:, lat_idx[t] + 1, lon_idx[t]]
-                    QC_before_lat = ds.variables['QC'][t][:, lat_idx[t] - 1, lon_idx[t]]
-                    QC_next_lon[RH_next_lon < 1.] = 0.
-                    QC_before_lon[RH_before_lon < 1.] = 0.
-                    QC_next_lat[RH_next_lat < 1.] = 0.
-                    QC_before_lat[RH_before_lat < 1.] = 0.
-                    dQCdx = (QC_next_lon
-                            - QC_before_lon) / profiles['dx'][start:end]
-                    dQCdy = (QC_next_lat
-                            - QC_before_lat) / profiles['dy']
-
-                profiles['A_QC_h'][:, start:end] = -1 * (profiles['U'][:, start:end] * dQCdx + profiles['V'][:, start:end] * dQCdy)
-
-    if model == 'SAM':
-         profiles['A_QV_h'] *= 1e-3
-            
-    logger.info('Save results to files')
-    for var in output_variables:
-        profiles_sorted = profiles[var][:, sort_idx]
-        nctools.array2D_to_netCDF(
-            profiles_sorted, var, '', (height, range(num_samples_tot)), ('height', 'profile_index'), outnames[var], overwrite=True
-                )
-    
-def average_random_profiles(model, run, time_period, variables, num_samples, sample_days, data_dir, log_average, **kwargs):
-    """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
-    ocean basins. Output is saved as .pkl files.
-    
-    Parameters:
-        model (str): name of model
-        run (str): name of model run
-        time_period (list of str): list containing start and end of time period as string 
-            in the format YYYY-mm-dd 
-        variables (list of str): names of variables
-        num_samples (num): number of randomly selected profiles
-        sample_days (str): 'all', 'first10' or 'last10'
-    """
-
-    time = pd.date_range(time_period[0], time_period[1], freq='1D')
-    start_date = time[0].strftime("%m%d")
-    end_date = time[-1].strftime("%m%d")
-    variables_3D = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'QS', 'QG', 'QR', 'RH', 'W', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v', 'A_RH_h', 'A_QV_h', 'U', 'V', 'UV', 'dRH_dx', 'dRH_dy', 'dRH_dz']
-    variables_2D = ['OLR', 'IWV', 'STOA', 'OLRC', 'STOAC', 'H_tropo', 'IWP', 'TQI', 'TQC', 'TQG', 'TQS', 'TQR', 'SST', 'SURF_PRES']
-    extra_variables = ['QV', 'dRH_dz']
-    datapath = f'{data_dir}/{model}/random_samples/'
-    filenames = '{}-{}_{}_sample_{}_{}-{}{}{}.nc'
-    perc_values = np.arange(2., 100.5, 2.0)
-    num_percs = len(perc_values)
-    iwv_bin_bnds = np.arange(0, 101, 1)
-    ic_thres = {
-        'QI': 0.001 * 1e-6,
-        'QC': 0.001 * 1e-6
-    }
-    stats = ['mean', 'std', 'median', 'min', 'max', 'quart25', 'quart75']
-    if sample_days == 'all':
-        sample_days_str = ''
-    else:
-        sample_days_str = '_'+sample_days
-    if log_average:
-        log_average_str = '_log'
-    else:
-        log_average_str = ''
-    
-    logger.info('Read data from files')
-    filename = filenames.format(model, run, variables_3D[0], num_samples, start_date, end_date, sample_days_str, '')
-    filename = os.path.join(datapath, filename)
-    with(Dataset(filename)) as ds:
-        height = ds.variables['height'][:].filled(np.nan)
-    num_levels = len(height)
-    
-    bins = np.arange(1, len(iwv_bin_bnds)) 
-    bin_count = np.zeros(len(iwv_bin_bnds) - 1)
-    
-    profiles_sorted = {}
-    for var in variables+['lon', 'lat']:
-        logger.info(var)
-        filename = filenames.format(model, run, var, num_samples, start_date, end_date, sample_days_str, '')
-        filename = os.path.join(datapath, filename)
-        with(Dataset(filename)) as ds:
-            profiles_sorted[var] = ds.variables[var][:].filled(np.nan)
-    num_profiles = len(profiles_sorted[var])
-            
-    logger.info('Calc additional variables: IWP, H_tropo etc.')
-    # RH tendency 
-    
-    if 'IWP' in extra_variables:
-        profiles_sorted['IWP'] = utils.calc_IWP(
-            profiles_sorted['QI'], 
-            profiles_sorted['TEMP'], 
-            profiles_sorted['PRES'], 
-            profiles_sorted['QV'], 
-            height
-        )
-        outname = filenames.format(model, run, 'IWP', num_samples, start_date, end_date, sample_days_str, '')
-        nctools.vector_to_netCDF(
-            profiles_sorted['IWP'], 'IWP', '', range(num_samples), 'profile_index', outname, overwrite=True
-        )
-        
-    if 'H_tropo' in extra_variables:    
-        profiles_sorted['H_tropo'] = utils.tropopause_height(
-            profiles_sorted['TEMP'], 
-            height
-        )
-        
-    if 'UV' in extra_variables:
-        profiles_sorted['UV'] = np.sqrt(profiles_sorted['U'] ** 2 + profiles_sorted['V'] ** 2)
-    
-    if 'dRH_dz' in extra_variables:
-        profiles_sorted['dRH_dz'] = np.gradient(profiles_sorted['RH'], height, axis=0)
-    # create mask to exclude profiles with no given longitude       
-    nan_mask = np.isnan(profiles_sorted['lon'])
-    # create mask to exclude profiles with unrealistic advection values
+    logger.info('Mask wrong values')
     tropo = np.where(height < 20000)
     if model == 'SAM':
         thres_a_qv = 4e-3
     else:
         thres_a_qv = 3e-5
-    if 'A_QV_h' in variables:
-        #wrong_mask_1 = np.any(np.abs(profiles_sorted['A_QV_h'][tropo]) > thres_a_qv, axis=0) 
-        wrong_mask_1 = np.logical_or(np.any(np.abs(profiles_sorted['A_QV_h'][tropo]) > thres_a_qv, axis=0),
-                                     np.any(np.abs(profiles_sorted['A_QV_h'] / profiles_sorted['QV']) > 0.01, axis=0))
 
-        nan_mask = np.logical_or(nan_mask, wrong_mask_1).astype(int)
+    mask_QV = np.any(np.abs(profiles['A_QV_h'][tropo]) > thres_a_qv, axis=0)
+    mask_RH = np.any(np.abs(profiles['DRH_Dt_h'][tropo]) > 0.001, axis=0) 
+
+    profiles['A_QV_h'][np.where(mask_QV)] = np.nan
+    profiles['DRH_Dt_h'][np.where(mask_RH)] = np.nan
+
+    logger.info('Save results')
+    for term in advection_terms:
+        outfile = filenames.selected_profiles(data_dir, model, run, term, num_samples, time_period, '')
+        save_random_profiles(outfile, profiles[term], term, height)
         
-    if 'DRH_Dt_h' in variables:
-        wrong_mask_2 = np.logical_or(np.any(profiles_sorted['DRH_Dt_h'][tropo] < -0.001, axis=0), 
-                                     np.any(profiles_sorted['DRH_Dt_h'][tropo] > 0.001, axis=0))
     
-        nan_mask = np.logical_or(nan_mask, wrong_mask_2).astype(int)
-    
-    # set masked profiles to nan
-    for var in variables+['lon', 'lat']+extra_variables:
-        if var in variables_3D:
-            profiles_sorted[var][:, np.where(nan_mask)] = np.nan
+def average_random_profiles_new(model, run, time_period, variables, num_samples, sample_days,
+                                data_dir, log_average, **kwargs):
+    """
+    """
+
+    # lists of variables (2D and 3D)
+    list_2D = varlist_2D()
+    list_3D = varlist_3D()
+    variables_2D = [v for v in variables if v in list_2D]
+    variables_3D = [v for v in variables if v in list_3D]
+
+    logger.info('Read random profiles')
+    if sample_days != 'all':
+        filename_suffix = sample_days
+    else:
+        filename_suffix = ''
+
+    profiles = {}
+    height = {}
+    for var in variables:
+        infile = filenames.selected_profiles(data_dir, model, run, var, num_samples, time_period, filename_suffix)
+        height[var], profiles[var] = read_random_profiles(infile, var)
+
+    perc_values = percentiles_from_number(num_percentiles)
+
+    mean = {}
+    std = {}
+    logger.info('Calculate averages and standard deviations')
+    for var in variables:
+        splitted_array = np.array_split(profiles[var], num_percentiles, axis=0)
+
+        if log_average and var in varlist_log_average():
+            # Average in log-space
+            mean[var] = np.asarray([np.exp(np.nanmean(np.log(a), axis=0)) for a in splitted_array])
         else:
-            profiles_sorted[var][np.where(nan_mask)] = np.nan
+            mean[var] = np.asarray([np.nanmean(a, axis=0) for a in splitted_array])
+        std[var] = np.asarray([np.nanstd(a, axis=0) for a in splitted_array])
 
-    perc = {s: {} for s in stats+['percentiles']}
-    binned = {s: {} for s in stats+['count']}
-    
-    logger.info('Binning to percentile bins')
-    perc['percentiles'] = np.asarray([np.percentile(profiles_sorted['IWV'], p) for p in perc_values])
-    splitted_array = {}
-    for var in variables+extra_variables:
-        logger.info(var)
-        splitted_array[var] = {}
-        if var in variables_2D: 
-            axis=0
-            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=axis)
-            
-        else:
-            axis=1
-            splitted_array[var] = np.array_split(profiles_sorted[var], num_percs, axis=axis)
-        
-        if var in ['PRES', 'QV'] and log_average == True:
-            # Average pressure in log-space
-            perc['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(a), axis=axis)) for a in splitted_array[var]])
-        else:
-            perc['mean'][var] = np.asarray([np.nanmean(a, axis=axis) for a in splitted_array[var]])
-        perc['std'][var] = np.asarray([np.nanstd(a, axis=axis) for a in splitted_array[var]])
-        perc['min'][var] = np.asarray([np.nanmin(a, axis=axis) for a in splitted_array[var]])
-        perc['max'][var] = np.asarray([np.nanmax(a, axis=axis) for a in splitted_array[var]])
-        perc['median'][var] = np.asarray([np.nanmedian(a, axis=axis) for a in splitted_array[var]])
-        perc['quart25'][var] = np.asarray([np.nanpercentile(a, 25, axis=axis) for a in splitted_array[var]])
-        perc['quart75'][var] = np.asarray([np.nanpercentile(a, 75, axis=axis) for a in splitted_array[var]])
-
-
-    # determine in-cloud ice/water content and cloud fraction in each bin
-    for condensate, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
-        perc['mean'][content] = np.asarray(
-            [np.ma.average(a, weights=(a > ic_thres[condensate]), axis=1).filled(0) for a in splitted_array[condensate]]
-        )
-        perc['mean'][fraction] = np.asarray(
-            [np.sum(a * (a > ic_thres[condensate]), axis=1) / a.shape[1] for a in splitted_array[condensate]]
-        )
-
-    logger.info('Binning to IWV bins')
-    bin_idx = np.digitize(profiles_sorted['IWV'], iwv_bin_bnds)
-    binned['count'] = np.asarray([len(np.where(bin_idx == bi)[0]) for bi in bins])
-    binned_profiles = {}
-    for var in variables+extra_variables:
-        logger.info(var)
-        if var in variables_2D:
-            binned_profiles[var] = [profiles_sorted[var][bin_idx == bi] for bi in bins]
-            axis=0
-        else:
-            binned_profiles[var] = [profiles_sorted[var][:, bin_idx == bi] for bi in bins]
-            axis=1
-
-        if var in ['PRES', 'QV']:
-            binned['mean'][var] = np.asarray([np.exp(np.nanmean(np.log(p), axis=axis)) for p in binned_profiles[var]])
-        else:
-            binned['mean'][var] = np.asarray([np.nanmean(p, axis=axis) for p in binned_profiles[var]])
-        binned['std'][var] = np.asarray([np.nanstd(p, axis=axis) for p in binned_profiles[var]])
-        binned['median'][var] = np.asarray([np.nanmedian(p, axis=axis) for p in binned_profiles[var]])
-        binned['min'][var] = np.asarray(
-            [np.nanmin(p, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
-        )
-        binned['max'][var] = np.asarray(
-            [np.nanmax(p, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
-        )
-        binned['quart25'][var] = np.asarray(
-            [np.nanpercentile(p, 25, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
-        )
-        binned['quart75'][var] = np.asarray(
-            [np.nanpercentile(p, 75, axis=axis) if p.size else np.ones(num_levels) * np.nan for p in binned_profiles[var]]
-        )
-
-    # determine in-cloud ice/water content and cloud fraction in each bin    
-    for condensate, content, fraction in zip(['QI', 'QC'], ['ICQI', 'ICQC'], ['CFI', 'CFL']):
-        binned['mean'][content] = np.asarray(
-            [np.ma.average(a, weights=(a > ic_thres[condensate]), axis=1).filled(0) for a in binned_profiles[condensate]]
-        )
-        binned['mean'][fraction] = np.asarray(
-            [np.sum(a * (a > ic_thres[condensate]), axis=1) / a.shape[1] for a in binned_profiles[condensate]]
-        )
-        
-    logger.info('Write output')
-    #output files
-    outname_perc = f'{model}-{run}_{start_date}-{end_date}_{num_percs}_perc_means_{num_samples}{sample_days_str}{log_average_str}_1exp.pkl'
-    outname_binned = f'{model}-{run}_{start_date}-{end_date}_bin_means_{num_samples}{sample_days_str}{log_average_str}_1exp.pkl'
-    
-    with open(os.path.join(datapath, outname_perc), 'wb' ) as outfile:
-        pickle.dump(perc, outfile) 
-    with open(os.path.join(datapath, outname_binned), 'wb' ) as outfile:
-        pickle.dump(binned, outfile)
+        outfile = filenames.averaged_profiles(data_dir, model, run, var, num_samples, time_period, filename_suffix)
+        ms = moisture_space.PercMoistureSpace.from_mean(mean[var], var, name=model, bins=perc_values, levels=height[var])
+        ms.profile_stats.set_attr('std', std[var])
+        ms.to_netcdf(outfile)
 
 def average_random_profiles_per_basin(model, run, time_period, variables, num_samples, sample_days, data_dir, **kwargs):
     """ Average randomly selected profiles in IWV percentile bins and IWV bins, separately for different
