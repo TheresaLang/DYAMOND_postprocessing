@@ -169,9 +169,9 @@ def save_random_profiles(outname, profiles, variable, height):
 def read_random_profiles(infile):
     """
     """
-    ds = xr.from_netcdf(infile)
+    ds = xr.load_dataset(infile)
     height = ds.coords['levels']
-    variable = ds.keys[0]
+    variable = list(ds.keys())[0]
     profiles = ds[variable].data
     
     return height, profiles
