@@ -331,6 +331,18 @@ def percentiles_from_number(num_percentiles):
     percentiles = np.arange(start, stop, step)
     
     return percentiles
+
+def get_latlon_inds_neighbors(lat_inds, lon_inds, num_lons=3600):
+    """
+    """
+    lon_inds_next = lon_inds + 1
+    lon_inds_next[lon_inds_next == num_lons] = 0
+    lon_inds_before = lon_inds - 1
+    lon_inds_before[lon_inds_before < 0] = num_lons - 1
+    lat_inds_next = lat_inds + 1
+    lat_inds_before = lat_inds - 1
+    
+    return lat_inds_before, lat_inds_next, lon_inds_before, lon_inds_next
     
     
 def select_random_profiles_new(model, run, variables, time_period, data_dir, num_samples,
