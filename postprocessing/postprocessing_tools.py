@@ -144,15 +144,26 @@ def save_random_profiles(outname, profiles, variable, height):
     """
     profile_inds = np.arange(profiles.shape[0])
     
-    ds = xr.Dataset(
-        {
-            variable: (["profiles_tot", "levels"], profiles),
-        },
-        coords = {
-            "profiles_tot": (["profiles_tot"], profile_inds),
-            "levels": (["levels"], height)
-        }
-    )
+    if variable in varlist_3D():
+        ds = xr.Dataset(
+            {
+                variable: (["profiles_tot", "levels"], profiles),
+            },
+            coords = {
+                "profiles_tot": (["profiles_tot"], profile_inds),
+                "levels": (["levels"], height)
+            }
+        )
+    elif variable in varlist_2D():
+        ds = xr.Dataset(
+            {
+                variable: (["profiles_tot"], profiles)
+            },
+            coords = {
+                "profiles_tot": (["profiles_tot"], profile_inds)
+            }
+        )
+        
     ds.to_netcdf(outname)
     
 def read_random_profiles(infile):
