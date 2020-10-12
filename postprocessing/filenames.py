@@ -23,6 +23,10 @@ def preprocessed_output(data_dir, model, run, variable, num_samples, time_period
         vinterp_str = 'vinterp_' 
     else:
         vinterp_str = ''
+        
+    if model in ['ICON', 'MPAS'] and variable == 'W':
+        variable = 'WHL'
+        
     filename = f'{model}-{run}_{variable}_hinterp_{vinterp_str}merged_{start_time_str}-{end_time_str}.nc'
     
     if variable == 'SST':
