@@ -53,9 +53,7 @@ def selected_profiles(data_dir, model, run, variable, num_samples, time_period, 
         info_timestep = '_'+info_timestep
         
     start_time_str, end_time_str = time_period_str(time_period)
-    #FIXME
-    filename = f'test_selected_profiles_{variable}{info_timesteps}.nc' 
-    #f'{model}-{run}_{variable}_sample_{num_samples}_{start_time_str}-{end_time_str}.nc'
+    filename = f'{model}-{run}_{variable}_sample_{num_samples}_{start_time_str}-{end_time_str}.nc'
     filename = join(data_dir, model, 'random_samples', filename)
     return filename
     
