@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-#SBATCH --job-name=horizontal_advection
-#SBATCH --output=logs/horizontal_advection-%j.out
+#SBATCH --job-name=advection
+#SBATCH --output=logs/advection-%j.out
 
 #SBATCH --account=mh1126       # Charge resources on this project account
 #SBATCH --partition=compute,compute2
