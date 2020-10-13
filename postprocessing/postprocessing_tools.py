@@ -49,7 +49,7 @@ def read_var(infile, model, varname):
         else:
             var = ds.variables[varname][:].filled(np.nan)
             
-        if model == 'MPAS' and len(var.shape) == 4 and varname != 'RH': 
+        if model == 'MPAS' and len(var.shape) == 4 and varname not in ['RH', 'W']: 
             var = var.transpose((0, 3, 1, 2))
             
     return var
@@ -77,8 +77,8 @@ def read_var_timestep(infile, model, varname, timestep):
         else:
             var = ds.variables[varname][timestep].filled(np.nan)
             
-        if model == 'MPAS' and len(var.shape) == 4 and varname != 'RH': 
-            var = var.transpose((0, 3, 1, 2))
+        if model == 'MPAS' and len(var.shape) == 3 and varname not in ['RH', 'W']: 
+            var = var.transpose((2, 0, 1))
             
     return var
 
@@ -96,7 +96,7 @@ def read_var_timestep_latlon(infile, model, variable, timestep, lat_inds, lon_in
         
     if is_3D:
         with Dataset(infile) as ds:
-            if model == 'MPAS' and variable in ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'U', 'V']:
+            if model == 'MPAS' and variable not in ['RH', 'W']:
                 profiles = ds.variables[variable][timestep][lat_inds, lon_inds, :].filled(np.nan).transpose([1, 0])
             else:
                 if model == 'SAM' and variable == 'PRES':
@@ -106,15 +106,15 @@ def read_var_timestep_latlon(infile, model, variable, timestep, lat_inds, lon_in
                 else:
                     profiles = ds.variables[variable][timestep][:, lat_inds, lon_inds].filled(np.nan)
                         
-        if model == 'SAM' and var in ['QV', 'QI', 'QC']:
+        if model == 'SAM' and variable in ['QV', 'QI', 'QC']:
             profiles *= 1e-3
         profiles = profiles.T
     
     else:
         with Dataset(infile) as ds:
-            if model == 'NICAM' and var != 'SST':
+            if model == 'NICAM' and variable != 'SST':
                 profiles = ds.variables[variable][timestep][0, lat_inds, lon_inds].filled(np.nan)
-            elif model == 'IFS' and var == 'SURF_PRES':
+            elif model == 'IFS' and variable == 'SURF_PRES':
                 profiles = np.exp(ds.variables[variable][timestep][0, lat_inds, lon_inds].filled(np.nan))
             else:
                 profiles = ds.variables[variable][timestep][lat_inds, lon_inds].filled(np.nan)
@@ -354,7 +354,7 @@ def select_random_profiles_new(model, run, variables, time_period, data_dir, num
                                filename_suffix='', **kwargs):
     """
     """
-
+    logger.info(f'{model}-{run}')
     # make sure that all variables needed to calculate IWV are in the list
     for v in ['TEMP', 'PRES', 'QV']:
         if new_sampling_idx and v not in variables:
@@ -914,6 +914,9 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES']
     advected_variables = ['QV', 'RH', 'TEMP', 'PRES']
     advection_terms = ['A_QV_h', 'A_QV_v', 'A_RH_h', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v']
+    lat = np.arange(-30, 30.1, 0.1)
+    dx = 111000 * 0.1
+    dy = 111000 * 0.1
 
     logger.info('Read random indices')
     random_ind_file = filenames.random_ind(data_dir, model, run, num_samples, time_period)
@@ -926,12 +929,6 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     for var in ['lat', 'lon']+input_variables:
         filename = filenames.selected_profiles(data_dir, model, run, var, num_samples, time_period, '')
         height, profiles[var] = read_random_profiles(filename, var)
-
-    logger.info('Calculate distance to next grid points')
-    dx = 0.1
-    dy = 0.1
-    profiles['dx'] = 111000 * dx * np.cos(np.deg2rad(profiles['lat']))
-    profiles['dy'] = 111000 * dy
 
     logger.info('Calculate vertical transport terms')
     # constants
@@ -950,13 +947,15 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         ).T
 
     logger.info('Read neighboring profiles and calculate horizontal transport terms')
-    d_dx = {v: np.zeros_like(profiles['TEMP']) for v in advected_variables}
-    d_dy = {v: np.zeros_like(profiles['TEMP']) for v in advected_variables}
+    d_dx = {v: np.zeros_like(profiles['TEMP'], dtype=np.float32) for v in advected_variables}
+    d_dy = {v: np.zeros_like(profiles['TEMP'], dtype=np.float32) for v in advected_variables}
     for var in advected_variables:
         filename = filenames.preprocessed_output(data_dir, model, run, var, num_samples, time_period)
         for t in range(num_timesteps):
             start = t * num_samples_timestep
             end = start + num_samples_timestep
+            lat_t = lat[lat_inds[t]]
+            dx_t = dx * np.cos(np.deg2rad(lat_t))
             lat_inds_before, lat_inds_next, lon_inds_before, lon_inds_next = get_latlon_inds_neighbors(lat_inds[t], lon_inds[t])
 
             var_lat_before = read_var_timestep_latlon(filename, model, var, t, lat_inds_before, lon_inds[t])
@@ -964,9 +963,12 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
             var_lon_before = read_var_timestep_latlon(filename, model, var, t, lat_inds[t], lon_inds_before)
             var_lon_next = read_var_timestep_latlon(filename, model, var, t, lat_inds[t], lon_inds_next)
 
-            d_dx[var][start:end] = (var_lat_next - var_lat_before) / profiles['dy']
-            d_dy[var][start:end] = (var_lon_next - var_lon_before) / np.expand_dims(profiles['dx'][start:end], 1)
-
+            d_dy[var][start:end] = (var_lat_next - var_lat_before) / dy
+            d_dx[var][start:end] = (var_lon_next - var_lon_before) / np.expand_dims(dx_t, 1)
+        # sort (so that order is the same as in profiles)
+        d_dy[var] = d_dy[var][sort_inds]
+        d_dx[var] = d_dx[var][sort_inds]
+    
     profiles['A_QV_h'] = -1 * (profiles['U'] * d_dx['QV'] + profiles['V'] * d_dy['QV'])
     profiles['A_RH_h'] = -1 * (profiles['U'] * d_dx['RH'] + profiles['V'] * d_dy['RH'])
     dPdt = d_dx['PRES'] * profiles['U'] + d_dy['PRES'] * profiles['V']
@@ -992,8 +994,8 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         save_random_profiles(outfile, profiles[term], term, height)
         
     
-def average_random_profiles_new(model, run, time_period, variables, num_samples, sample_days,
-                                data_dir, log_average, **kwargs):
+def average_random_profiles(model, run, time_period, variables, num_samples, num_percentiles, sample_days,
+                            data_dir, log_average, **kwargs):
     """
     """
 
@@ -1030,7 +1032,7 @@ def average_random_profiles_new(model, run, time_period, variables, num_samples,
             mean[var] = np.asarray([np.nanmean(a, axis=0) for a in splitted_array])
         std[var] = np.asarray([np.nanstd(a, axis=0) for a in splitted_array])
 
-        outfile = filenames.averaged_profiles(data_dir, model, run, var, num_samples, time_period, filename_suffix)
+        outfile = filenames.averaged_profiles(data_dir, model, run, var, num_samples, num_percentiles, time_period, filename_suffix, log_average)
         ms = moisture_space.PercMoistureSpace.from_mean(mean[var], var, name=model, bins=perc_values, levels=height[var])
         ms.profile_stats.set_attr('std', std[var])
         ms.to_netcdf(outfile)
