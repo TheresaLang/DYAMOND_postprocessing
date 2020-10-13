@@ -43,9 +43,14 @@ def preprocessed_output(data_dir, model, run, variable, num_samples, time_period
 def random_ind(data_dir, model, run, num_samples, time_period):
     """
     """
+    year = time_period[0][0:4]
     start_time_str, end_time_str = time_period_str(time_period)
     filename = f'{model}-{run}_random_ind_sample_{num_samples}_{start_time_str}-{end_time_str}.nc'
-    filename = join(data_dir, model, 'random_samples', filename)
+    
+    if model == 'ERA5':
+        filename = join(data_dir, model, year, 'random_samples', filename)
+    else:
+        filename = join(data_dir, model, 'random_samples', filename)
     
     return filename
 
