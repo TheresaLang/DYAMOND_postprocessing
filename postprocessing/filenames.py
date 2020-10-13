@@ -18,6 +18,7 @@ def time_period_str(time_period):
 def preprocessed_output(data_dir, model, run, variable, num_samples, time_period):
     """
     """
+    year = time_period[0][0:4]
     start_time_str, end_time_str = time_period_str(time_period)
     if model in models_vinterp() and variable in ptools.varlist_3D():
         vinterp_str = 'vinterp_' 
@@ -32,6 +33,8 @@ def preprocessed_output(data_dir, model, run, variable, num_samples, time_period
     if variable == 'SST':
         filename = f'DYAMOND_SST_{start_time_str}-{end_time_str}_hinterp_merged.nc'
         filename = join(data_dir, 'Initialization', filename)
+    elif model == 'ERA5':
+        filename = join(data_dir, model, year, filename)
     else:
         filename = join(data_dir, model, filename)
     
@@ -52,9 +55,15 @@ def selected_profiles(data_dir, model, run, variable, num_samples, time_period, 
     if info_timesteps:
         info_timestep = '_'+info_timestep
         
+    year = time_period[0][0:4]
     start_time_str, end_time_str = time_period_str(time_period)
     filename = f'{model}-{run}_{variable}_sample_{num_samples}_{start_time_str}-{end_time_str}.nc'
-    filename = join(data_dir, model, 'random_samples', filename)
+    
+    if model == 'ERA5':
+        filename = join(data_dir, model, year, 'random_samples', filename)
+    else:
+        filename = join(data_dir, model, 'random_samples', filename)
+ 
     return filename
     
 
@@ -66,9 +75,14 @@ def averaged_profiles(data_dir, model, run, variable, num_samples, num_percentil
     else:
         log_str = ''
         
+    year = time_period[0][0:4]   
     start_time_str, end_time_str = time_period_str(time_period)
     filename = f'{model}-{run}_{variable}_{num_percentiles}_averages{log_str}_{num_samples}_{start_time_str}-{end_time_str}.nc'
-    filename = join(data_dir, model, 'random_samples', filename)
+    if model == 'ERA5':
+        filename = join(data_dir, model, year, 'random_samples', filename)
+    else:
+        filename = join(data_dir, model, 'random_samples', filename)
+        
     return filename
 
 def heightfile(data_dir, model):
