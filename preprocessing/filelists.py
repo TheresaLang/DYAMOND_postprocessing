@@ -6,7 +6,6 @@ import logging
 import json
 import typhon
 import pickle
-import analysis_tools as atools
 from time import sleep
 from scipy.interpolate import interp1d
 from netCDF4 import Dataset
