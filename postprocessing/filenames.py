@@ -58,11 +58,16 @@ def selected_profiles(data_dir, model, run, variable, num_samples, time_period, 
     return filename
     
 
-def averaged_profiles(data_dir, model, run, variable, num_samples, num_percentiles, time_period, info_timesteps):
+def averaged_profiles(data_dir, model, run, variable, num_samples, num_percentiles, time_period, info_timesteps, log_average=False):
     """
     """
+    if log_average and variable in ['PRES', 'QV', 'H2O']:
+        log_str = f'_log'
+    else:
+        log_str = ''
+        
     start_time_str, end_time_str = time_period_str(time_period)
-    filename = f'{model}-{run}_{variable}_{num_percentiles}_averages_{num_samples}_{start_time_str}-{end_time_str}.nc'
+    filename = f'{model}-{run}_{variable}_{num_percentiles}_averages{log_str}_{num_samples}_{start_time_str}-{end_time_str}.nc'
     filename = join(data_dir, model, 'random_samples', filename)
     return filename
 
