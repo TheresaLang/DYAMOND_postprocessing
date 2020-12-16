@@ -28,7 +28,7 @@ config['filename_suffix'] = ''
 models = config['models']
 runs = config['runs']
 
-ptools.select_random_profiles_new(model=models[ID], run=runs[ID], **config)
+ptools.select_random_profiles(model=models[ID], run=runs[ID], **config)
 
 
 # import os

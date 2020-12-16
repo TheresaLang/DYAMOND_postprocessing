@@ -31,4 +31,4 @@ config['filename_suffix'] = ID
 model = config['models'][0]
 run = config['runs'][0]
 
-ptools.select_random_profiles_new(model, run, **config)
+ptools.select_random_profiles(model, run, **config)
