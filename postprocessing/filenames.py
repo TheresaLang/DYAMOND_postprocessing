@@ -58,11 +58,11 @@ def selected_profiles(data_dir, model, run, variable, num_samples, time_period, 
     """
     """
     if info_timesteps:
-        info_timestep = '_'+info_timestep
+        info_timesteps = '_'+info_timesteps
         
     year = time_period[0][0:4]
     start_time_str, end_time_str = time_period_str(time_period)
-    filename = f'{model}-{run}_{variable}_sample_{num_samples}_{start_time_str}-{end_time_str}.nc'
+    filename = f'{model}-{run}_{variable}_sample_{num_samples}_{start_time_str}-{end_time_str}{info_timesteps}.nc'
     
     if model == 'ERA5':
         filename = join(data_dir, model, year, 'random_samples', filename)
@@ -75,6 +75,9 @@ def selected_profiles(data_dir, model, run, variable, num_samples, time_period, 
 def averaged_profiles(data_dir, model, run, variable, num_samples, num_percentiles, time_period, info_timesteps, log_average=False):
     """
     """
+    if info_timesteps:
+        info_timesteps = '_'+info_timesteps
+        
     if log_average and variable in ['PRES', 'QV', 'H2O']:
         log_str = f'_log'
     else:
@@ -82,7 +85,7 @@ def averaged_profiles(data_dir, model, run, variable, num_samples, num_percentil
         
     year = time_period[0][0:4]   
     start_time_str, end_time_str = time_period_str(time_period)
-    filename = f'{model}-{run}_{variable}_{num_percentiles}_averages{log_str}_{num_samples}_{start_time_str}-{end_time_str}.nc'
+    filename = f'{model}-{run}_{variable}_{num_percentiles}_averages{log_str}_{num_samples}_{start_time_str}-{end_time_str}{info_timesteps}.nc'
     if model == 'ERA5':
         filename = join(data_dir, model, year, 'random_samples', filename)
     else:
