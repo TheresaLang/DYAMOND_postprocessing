@@ -11,6 +11,9 @@ from scipy.interpolate import interp1d
 from netCDF4 import Dataset
 from moisture_space import utils
 
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 def get_modelspecific_varnames(model):
     """ Returns dictionary with variable names for a specific model.
     
@@ -399,8 +402,9 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
         variables (list of str): list of variable names
         time_period (list of str): list containing start and end of time period in the format YYYY-mm-dd
         temp_dir (str): path to directory for output files
+        grid_res (float): resolution of target grid in degrees (e.g. 0.1)
     """
-    
+    dyamond_dir = '/work/ka1081/DYAMOND'
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
     
     raw_files = []
@@ -415,6 +419,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
         varnames = get_modelspecific_varnames(model)
 
         if model == 'ICON':
+            # variables with 15-minute output
+            vars_15min = ['SURF_PRES', 'OLR', 'IWV', 'TQI', 'TQC', 'TQR', 'TQS', 'TQG', 'W500']
             # dictionary containing endings of filenames containing the variables
             var2suffix = {
                 'TEMP': 'atm_3d_t_ml_',
@@ -443,38 +449,41 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
 
             for var in variables:
                 # filenames of raw files, grid weights and the output file
-                suffix = var2suffix[var]
+                var_suffix = var2suffix[var]
                 varname = varnames[var]
-                if (run=='5.0km_1'):
-                    stem   = '/work/ka1081/DYAMOND/ICON-5km/nwp_R2B09_lkm1006_{}'.format(suffix)
-                elif (run=='5.0km_2'):
-                    stem   = '/work/ka1081/DYAMOND/ICON-5km_2/nwp_R2B09_lkm1013_{}'.format(suffix)
-                elif (run=='2.5km'):
-                    stem   = '/work/ka1081/DYAMOND/ICON-2.5km/nwp_R2B10_lkm1007_{}'.format(suffix)
-                elif (run == '2.5km_winter'):
-                    stem = '/mnt/lustre02/work/mh1126/m300773/DYAMONDwinter/ICON-2.5km/nwp_R2B10_lkm1007_{}'.format(suffix)
+                if run == '5.0km_1':
+                    stem = os.path.join(dyamond_dir, f'ICON-5km/nwp_R2B09_lkm1006_{var_suffix}')
+                elif run == '5.0km_2':
+                    stem = os.path.join(dyamond_dir, f'ICON-5km_2/nwp_R2B09_lkm1013_{var_suffix}')
+                elif run == '2.5km':
+                    stem = os.path.join(dyamond_dir, f'ICON-2.5km/nwp_R2B10_lkm1007_{var_suffix}')
+                elif run == '2.5km_winter':
+                    stem = f'/mnt/lustre02/work/mh1126/m300773/DYAMONDwinter/ICON-2.5km/nwp_R2B10_lkm1007_{var_suffix}'
                 else:
                     print (f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km".')
                     return None
-
-                for i in np.arange(time.size):
-                    raw_file = stem + time[i].strftime("%Y%m%d") + 'T000000Z.grb'
-                    time_str = time[i].strftime("%m%d")
+                
+                # ICON output is one file per day
+                for t in time:
+                    # filenames
+                    raw_file = stem + t.strftime("%Y%m%d") + 'T000000Z.grb'
+                    time_str = t.strftime("%m%d")
                     out_file = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
                     out_file = os.path.join(temp_dir, out_file)
-
                     raw_files.append(raw_file)
                     out_files.append(out_file)
-                    if var in ['SURF_PRES', 'OLR', 'IWV', 'TQI', 'TQC', 'TQR', 'TQS', 'TQG', 'W500']:
-                        options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,1/96/12')
-                    else:
-                        options.append(f'-chname,{varname},{var} -selvar,{varname}')
-                    
                     weights.append(get_path2weights(model, run, grid_res))
                     grids.append(get_path2grid(grid_res))
-
+                    
+                    # options for remapping
+                    opt = f'-chname,{varname},{var} -selvar,{varname}'
+                    if var in vars_15min:
+                        opt = opt + ' -seltimestep,1/96/12'
+                    options.append(opt)
+                    
         elif model == 'NICAM':
-            
+            # variables with 15-minute output
+            vars_15min = ['SURF_PRES', 'OLR', 'IWV', 'OLRC', 'SUTOA', 'SDTOA']
             # dictionary containing filenames containing the variables
             var2filename = {
                 'TEMP': 'ms_tem.nc',
@@ -501,36 +510,41 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
             }
 
             for var in variables:
-                # paths to raw files
                 filename = var2filename[var]
                 varname = varnames[var]
-                if (run=='3.5km'):
-                    stem   = '/work/ka1081/DYAMOND/NICAM-3.5km'
-                elif (run=='7.0km'):
-                    stem   = '/work/ka1081/DYAMOND/NICAM-7km'
+                if run == '3.5km':
+                    stem = os.path.join(dyamond_dir, 'NICAM-3.5km')
+                elif run == '7.0km':
+                    stem = os.path.join(dyamond_dir, 'NICAM-7km')
                 else:
                     print (f'Run {run} not supported for {model}.\nSupported runs are: "3.5km" and "7.0km".')
-                    exit
+                    return None
 
+                # options for remapping
+                opt = f'-chname,{varname},{var} -selvar,{varname}'
+                if var in vars_15min:
+                    opt = opt + ' -seltimestep,12/96/12'
                 # append filenames for this variable to raw_files and out_files
-                for i in np.arange(time.size):
-                    dayfolder = glob.glob(os.path.join(stem, time[i].strftime("%Y%m%d")+'*'))[0]
+                # NICAM output is one file per day
+                for t in time:
+                    # filenames
+                    dayfolder = glob.glob(os.path.join(stem, t.strftime("%Y%m%d")+'*'))[0]
                     raw_file = os.path.join(dayfolder, filename)
-                    time_str = time[i].strftime("%m%d")
+                    time_str = t.strftime("%m%d")
                     out_file = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
                     out_file = os.path.join(temp_dir, out_file)
 
                     raw_files.append(raw_file)
                     out_files.append(out_file)
-                    if var in ['SURF_PRES', 'OLR', 'IWV', 'OLRC', 'SUTOA', 'SDTOA']:
-                        options.append(f'-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12')
-                    else:
-                        options.append(f'-chname,{varname},{var} -selvar,{varname}')
                     weights.append(get_path2weights(model, run, grid_res))
-                    #weights.append('/mnt/lustre02/work/mh1126/m300773/DYAMOND/NICAM/NICAM-3.5km_0.10_weightsnn.nc')
                     grids.append(get_path2grid(grid_res))
+                    options.append(opt)
+                    
 
         elif model == 'GEOS':
+            vars_flux = ['OLR', 'STOA', 'OLRC', 'STOAC']
+            vars_2D = ['IWV', 'SURF_PRES']
+            
             var2dirname = {
                 'TEMP': 'T',
                 'QV': 'QV',
@@ -554,48 +568,37 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 varname = var2dirname[var]
                 varname_infile = varnames[var]
                 if run == '3.0km':
-                    if var in ['OLR', 'STOA', 'OLRC', 'STOAC']:
-                        stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/tavg/tavg_15mn_2d_{varname}_Mx' 
-                    elif var in ['IWV', 'SURF_PRES']:
-                        stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/inst/inst_15mn_2d_{varname}_Mx'
+                    if var in vars_flux:
+                        stem = os.path.join(dyamond_dir, f'GEOS-3km/tavg/tavg_15mn_2d_{varname}_Mx') 
+                    elif var in vars_2D:
+                        stem = os.path.join(dyamond_dir, f'DYAMOND/GEOS-3km/inst/inst_15mn_2d_{varname}_Mx')
                     else:
-                        stem = f'/mnt/lustre02/work/ka1081/DYAMOND/GEOS-3km/inst/inst_03hr_3d_{varname}_Mv'
+                        stem = os.path.join(dyamond_dir, f'DYAMOND/GEOS-3km/inst/inst_03hr_3d_{varname}_Mv')
                 else:
                     print (f'Run {run} not supported for {model}.\nSupported runs are: "3.0km".')  
 
-                for i in np.arange(time.size):
+                # options for remapping
+                opt = f'-chname,{varname_infile},{var} -selvar,{varname_infile}'
+                # filenames
+                for t in time:
                     for h in np.arange(0, 24, 3):
-                        date_str = time[i].strftime("%Y%m%d")
+                        date_str = t.strftime("%Y%m%d")
                         hour_str = f'{h:02d}'
-                        if var in ['OLR', 'STOA', 'OLRC', 'STOAC']:
+                        if var in vars_flux:
                             hour_file = f'DYAMOND.tavg_15mn_2d_flx_Mx.{date_str}_{hour_str}00z.nc4'
-                        elif var in ['IWV', 'SURF_PRES']:
+                        elif var in vars_2D:
                             hour_file = f'DYAMOND.inst_15mn_2d_asm_Mx.{date_str}_{hour_str}00z.nc4'
                         else:
                             hour_file = f'DYAMOND.inst_03hr_3d_{varname}_Mv.{date_str}_{hour_str}00z.nc4'
-                        opt = f'-chname,{varname_infile},{var} -selvar,{varname_infile}'
                         hour_file = os.path.join(stem, hour_file)
                         date_str = time[i].strftime("%m%d")
                         out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
                         out_file = os.path.join(temp_dir, out_file)
                         raw_files.append(hour_file)
                         out_files.append(out_file)
-                        options.append(opt)
                         weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
-    #        for var in variables:
-    #            if run == '3.0km' or run == '3.0km-MOM':
-    #                stem = f'/mnt/lustre02/work/mh1126/m300773/DYAMOND/GEOS'
-    #            else:
-    #                print (f'Run {run} not supported for {model}.\nSupported runs are: "3.0km" and "3.0km-MOM".')    
-    #            for i in np.arange(time.size):
-    #                date_str = time[i].strftime("%m%d")
-    #                day_file = f'GEOS-{run}_{var}_{date_str}.nc'
-    #                day_file = os.path.join(stem, day_file)
-    #                temp = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
-    #                out_file = os.path.join(temp_dir, temp)
-    #                raw_files.append(day_file)
-    #                out_files.append(out_file)
+                        options.append(opt)
 
         elif model == 'IFS':
             var2varnumber = {
@@ -631,18 +634,10 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OMEGA': '-',
                 'GH': 'FI'
             }
-    #        var2unit = {
-    #           'TEMP': 'K',
-    #            'QV': 'kg kg^-1',
-    #            'SURF_PRES': 'Pa',
-    #            'QI': 'kg kg^-1',
-    #            'OLR': 'W m^-2',
-    #            'IWV': 'kg m^-2'
-    #        }
 
             for var in variables:
-                #option = f'-chname,var{var2varnumber[var]},{var}'
-                option = f'-chname,{var2variablename[var]},{var}'
+                # option for remapping 
+                opt = f'-chname,{var2variablename[var]},{var}'
                 for i in np.arange(time.size):
                     for h in np.arange(0, 24, 3):
                         date_str = time[i].strftime("%m%d")
@@ -653,14 +648,16 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         out_file = os.path.join(temp_dir, out_file)
                         raw_files.append(hour_file)
                         out_files.append(out_file)
-                        options.append(option)
                         weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
+                        options.append(opt)
 
         elif model == 'SAM':
             ref_date = pd.Timestamp('2016-08-01-00')
             timeunit_option = '-settunits,days' 
             grid_option = '-setgrid,/mnt/lustre02/work/ka1081/DYAMOND/SAM-4km/OUT_2D/DYAMOND_9216x4608x74_7.5s_4km_4608_0000002400.CWP.2D.nc'
+            vars_2D = ['OLR', 'STOA', 'IWV', 'SURF_PRES']
+            
             var2filename = {
                 'TEMP': '_TABS',
                 'QV': '_QV',
@@ -679,38 +676,46 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OMEGA': '-'
             }
 
+            stem = os.path.join(dyamond_dir, 'SAM-4km')
             for var in variables:
                 varname = varnames[var]
-                if var in ['OLR', 'STOA', 'IWV', 'SURF_PRES']:
-                    stem = '/mnt/lustre02/work/ka1081/DYAMOND/SAM-4km/OUT_2D'
+                if var in vars_2D:
+                    stem = os.path.join(stem, 'OUT_2D')
                 else:
-                    stem = '/mnt/lustre02/work/ka1081/DYAMOND/SAM-4km/OUT_3D'
+                    stem = os.path.join(stem, 'OUT_3D')
+                    
+                chname_option = f'-chname,{varname},{var}'
                 for i in np.arange(time.size):
                     for h in np.arange(0, 24, 3):
+                        # filenames
                         date_str = time[i].strftime('%Y-%m-%d')
                         hour_str = f'{h:02d}'
-
-                        chname_option = f'-chname,{varname},{var}'
-                        timeaxis_option = f'-settaxis,{date_str},{hour_str}:00:00,3h'
-                        option = ' '.join([chname_option, timeaxis_option, timeunit_option, grid_option])
 
                         timestamp = pd.Timestamp(f'{date_str}-{hour_str}')
                         secstr = int((timestamp - ref_date).total_seconds() / 7.5)
                         secstr = f'{secstr:010}'
                         hour_file = f'DYAMOND_9216x4608x74_7.5s_4km_4608_{secstr}{var2filename[var]}.nc'
                         hour_file = os.path.join(stem, hour_file)
-                        date_str = time[i].strftime("%m%d")
-                        out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                        date_str_short = time[i].strftime("%m%d")
+                        out_file = f'{model}-{run}_{var}_{date_str_short}_{hour_str}_hinterp.nc'
+                        
+                        # combine options for remapping
+                        timeaxis_option = f'-settaxis,{date_str},{hour_str}:00:00,3h'
+                        option = ' '.join([chname_option, timeaxis_option, timeunit_option, grid_option])
+                        
                         out_file = os.path.join(temp_dir, out_file)
-
                         raw_files.append(hour_file)
-                        out_files.append(out_file)
-                        options.append(option)          
+                        out_files.append(out_file)        
                         weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
+                        options.append(option)  
 
         elif model == 'UM':
             stem = '/mnt/lustre02/work/ka1081/DYAMOND/UM-5km'
+            # variables with 15-min output
+            vars_15min = ['IWV', 'SURF_PRES']
+            # variables with 1h output
+            vars_1h = ['OLR', 'SDTOA', 'SUTOA']
 
             var2dirname = {
                 'TEMP': 'ta',
@@ -732,8 +737,10 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OMEGA': '-'
             }
 
+            opt = f'-chname,{varname},{var} -selvar,{varname}'
             for var in variables:
                 varname = varnames[var]
+                dirname = var2dirname[var]
                 for i in np.arange(time.size):
                     date_str = time[i].strftime('%Y%m%d')
                     if var == 'V':
@@ -741,33 +748,37 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                     else: 
                         varstr = var2dirname[var]
 
-                    if var in ['IWV', 'SURF_PRES']:
-                        opt = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,12/96/12'
-                        day_file = f'{varstr}_15min_HadGEM3-GA71_N2560_{date_str}.nc'
-                    elif var in ['OLR', 'SDTOA', 'SUTOA']:
-                        opt = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,3/24/3'
-                        day_file = f'{varstr}_1hr_HadGEM3-GA71_N2560_{date_str}.nc'
+                    if var in vars_15min:
+                        opt = opt + ' -seltimestep,12/96/12'
+                        out_interv_str = '15min'
+                    elif var in vars_1h:
+                        opt = opt + ' -seltimestep,3/24/3'
+                        out_interv_str = '1hr'
                     else:
-                        opt = f'-chname,{varname},{var} -selvar,{varname}'
-                        day_file = f'{varstr}_3hr_HadGEM3-GA71_N2560_{date_str}.nc'
-
-                    day_file = os.path.join(stem, var2dirname[var], day_file)
-
-                    date_str = time[i].strftime('%m%d')
-                    out_file = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
+                        out_interv_str = '3hr'
+                        
+                    day_file = f'{varstr}_{out_interv_str}_HadGEM3-GA71_N2560_{date_str}.nc'
+                    day_file = os.path.join(stem, dirname, day_file)
+                    date_str_short = time[i].strftime('%m%d')
+                    out_file = f'{model}-{run}_{var}_{date_str_short}_hinterp.nc'
                     out_file = os.path.join(temp_dir, out_file)
 
                     raw_files.append(day_file)
                     out_files.append(out_file)
-                    options.append(opt)
                     weights.append(get_path2weights(model, run, grid_res))
                     grids.append(get_path2grid(grid_res))
+                    options.append(opt)
+
+        # For the following models, raw output has to be prepared before the 
+        # horizontal interpolation can be performed!
 
         elif model == 'FV3':
             if run == '3.25km':
                 stem = '/mnt/lustre02/work/ka1081/DYAMOND/FV3-3.25km'
             else: 
                 print (f'Run {run} not supported for {model}.\nSupported run is "3.25km".')
+                
+            vars_15min = ['IWV', 'OLR', 'SDTOA', 'SUTOA', 'SURF_PRES']
 
             var2filename = {
                 'TEMP': 'temp',
@@ -789,78 +800,51 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'OMEGA': '-'
             }
 
-            target_time_3h = pd.date_range(time_period[0]+' 3:00:00', pd.Timestamp(time_period[1]+' 0:00:00')+pd.DateOffset(1), freq='3h')
-            target_time_15min = pd.date_range(time_period[0]+' 3:00:00', pd.Timestamp(time_period[1]+' 0:00:00')+pd.DateOffset(1), freq='3h')
-            time = pd.date_range("2016-08-10", "2016-09-08", freq='1D')
+            target_time = pd.date_range(time_period[0]+' 3:00:00', pd.Timestamp(time_period[1]+' 0:00:00')+pd.DateOffset(1), freq='3h')
             time_15min = pd.date_range("2016-08-01 0:15:00", "2016-09-10 0:00:00", freq='15min')
             time_3h = pd.date_range("2016-08-01 3:00:00", "2016-09-10 0:00:00", freq='3h')
             
             for var in variables:
-                print(var)
                 varname = varnames[var]
-                if var in ['IWV', 'OLR', 'SDTOA', 'SUTOA', 'SURF_PRES']:
-                    for t in target_time_15min:
-                        print(t)
-                        if t < pd.Timestamp('2016-08-11 3:00:00'):
-                            dir_name = '2016080100'
-                        elif t < pd.Timestamp('2016-08-21 3:00:00'):
-                            dir_name = '2016081100'
-                        elif t < pd.Timestamp('2016-08-31 3:00:00'):
-                            dir_name = '2016082100'
-                        else:
-                            dir_name = '2016083100'
+                for t in target_time:
+                    if t < pd.Timestamp('2016-08-11 3:00:00'):
+                        dir_name = '2016080100'
+                    elif t < pd.Timestamp('2016-08-21 3:00:00'):
+                        dir_name = '2016081100'
+                    elif t < pd.Timestamp('2016-08-31 3:00:00'):
+                        dir_name = '2016082100'
+                    else:
+                        dir_name = '2016083100'
+                    
+                    if var in vars_15min:
                         timestep = np.mod(np.where(time_15min == t)[0][0], 960) + 1
-                        hour_file = var2filename[var] + '_C3072_12288x6144.fre.nc'
-                        hour_file = os.path.join(stem, dir_name, hour_file)
-                        date_str = t.strftime('%m%d')
-                        hour_str = t.strftime('%H')
-                        out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
-                        out_file = os.path.join(temp_dir, out_file)
-                        option = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,{timestep}'
-                        print(timestep)
-                        print(out_file)
-                        
-                        raw_files.append(hour_file)
-                        out_files.append(out_file)
-                        options.append(option)
-                        weights.append(get_path2weights(model, run, grid_res))
-                        grids.append(get_path2grid(grid_res))
-                else:
-                    for t in target_time_3h:
-                        print(t)
-                        if t < pd.Timestamp('2016-08-11 3:00:00'):
-                            dir_name = '2016080100'
-                        elif t < pd.Timestamp('2016-08-21 3:00:00'):
-                            dir_name = '2016081100'
-                        elif t < pd.Timestamp('2016-08-31 3:00:00'):
-                            dir_name = '2016082100'
-                        else:
-                            dir_name = '2016083100'
+                    else:
                         timestep = np.mod(np.where(time_3h == t)[0][0], 80) + 1
                         
-                        if var in ['U', 'V']:
+                    if var in ['U', 'V']:
                             hour_file = f'{var.lower()}_3hr.nc'
                             hour_file = os.path.join(temp_dir, dir_name, hour_file)
-                        else:
-                            hour_file = var2filename[var] + '_C3072_12288x6144.fre.nc'
-                            hour_file = os.path.join(stem, dir_name, hour_file)
-                        date_str = t.strftime('%m%d')
-                        hour_str = t.strftime('%H')
-                        out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
-                        out_file = os.path.join(temp_dir, out_file)
-                        option = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,{timestep}'
-                        print(timestep)
-                        print(out_file)
+                    else:
+                        hour_file = var2filename[var] + '_C3072_12288x6144.fre.nc'
+                        hour_file = os.path.join(stem, dir_name, hour_file)
                         
-                        raw_files.append(hour_file)
-                        out_files.append(out_file)
-                        options.append(option)
-                        if var in ['U', 'V']:
-                            weights.append('/mnt/lustre02/work/mh1126/m300773/DYAMOND/FV3/FV3-3.25km_UV_0.10_grid_wghts.nc')
-                        else:
-                            weights.append(get_path2weights(model, run, grid_res))
-                        grids.append(get_path2grid(grid_res))
+                    date_str = t.strftime('%m%d')
+                    hour_str = t.strftime('%H')
+                    out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                    out_file = os.path.join(temp_dir, out_file)
+                    option = f'-chname,{varname},{var} -selvar,{varname} -seltimestep,{timestep}'
+                    print(timestep)
+                    print(out_file)
 
+                    raw_files.append(hour_file)
+                    out_files.append(out_file)
+                    grids.append(get_path2grid(grid_res))
+                    if var in ['U', 'V']:
+                        weights.append('/mnt/lustre02/work/mh1126/m300773/DYAMOND/FV3/FV3-3.25km_UV_0.10_grid_wghts.nc')
+                    else:
+                        weights.append(get_path2weights(model, run, grid_res))
+                    
+                    options.append(option)
 
         elif model == 'MPAS':
             for var in variables:
@@ -873,30 +857,39 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         hour_file = os.path.join(temp_dir, hour_file)
                         out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
                         out_file = os.path.join(temp_dir, out_file)
-                        option = f'-chname,{varname},{var} -selvar,{varname}'
+                        
                         raw_files.append(hour_file)
                         out_files.append(out_file)
-                        options.append(option)
                         weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
+                        
+                        option = f'-chname,{varname},{var} -selvar,{varname}'
+                        options.append(option)
 
         elif model == 'ARPEGE':
-            preprocessing_path = '/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/preprocessing_ARPEGE'
+            preprocessing_path = '/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/prerocessing/preprocessing_ARPEGE'
             griddesfile = os.path.join(preprocessing_path, 'griddes.arpege1')
             for var in variables:
                 varname = varnames[var]
-                for i in np.arange(time.size):
-                    if time[i].day == 10:
+                # options for remapping
+                opt = f'-setgrid,{griddesfile} -setgridtype,regular -chname,{varname},{var}'
+                
+                # filenames
+                for t in time:
+                    # file are missing for 10 August
+                    if t.day == 10 and t.month == 8:
                         hours = np.arange(3, 22, 3)
                     else:
                         hours = np.arange(3, 25, 3)
+                        
                     for h in hours:
-                        year_str = time[i].strftime("%Y")
-                        date_str = time[i].strftime("%m%d")
+                        year_str = t.strftime("%Y")
+                        date_str = t.strftime("%m%d")
                         hour_str = f'{h:02d}'
                         hour_file = f'{year_str}{date_str}{hour_str}_{var}.gp'
                         hour_file = os.path.join(temp_dir, hour_file)
-                        #ändern!
+
+                        # hr 24 in ARPEGE data corresponds to hr 00 on next day
                         if h == 24:
                             hour_str_out = '00'
                             time_out = time[i] + pd.Timedelta('1d')
@@ -906,12 +899,12 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                             date_str_out = date_str
                         out_file = f'{model}-{run}_{var}_{date_str_out}_{hour_str_out}_hinterp.nc'
                         out_file = os.path.join(temp_dir, out_file)
-                        option = f'-setgrid,{griddesfile} -setgridtype,regular -chname,{varname},{var}'
+                        
                         raw_files.append(hour_file)
                         out_files.append(out_file)
-                        options.append(option)
                         weights.append(get_path2weights(model, run, grid_res))
                         grids.append(get_path2grid(grid_res))
+                        options.append(opt)
         
         elif model == 'ERA5':
             var2variablename = {
@@ -925,7 +918,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                 'V': 'V'
             }
             for var in variables:
-                option = f'-seltimestep,1/24/3 -chname,{var2variablename[var]},{var}'
+                opt = f'-seltimestep,1/24/3 -chname,{var2variablename[var]},{var}'
                 for i in np.arange(time.size):
                     date_str = time[i].strftime("%m%d")
                     day_file = f'{model}-{run}_{var}_{date_str}.nc'
@@ -934,9 +927,9 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                     out_file = os.path.join(temp_dir, out_file)
                     raw_files.append(day_file)
                     out_files.append(out_file)
-                    options.append(option)
                     weights.append(get_path2weights(model, run, grid_res))
                     grids.append(get_path2grid(grid_res))
+                    options.append(opt)
         
         else:
             logger.error('The model specified for horizontal interpolation does not exist or has not been implemented yet.') 
@@ -966,8 +959,6 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
     
     time = pd.date_range(time_period[0], time_period[1], freq='1D')
 
-
-    
     for model, run in zip(models, runs):
     
         if model == 'IFS':
@@ -1212,7 +1203,7 @@ def get_preprocessingfilelist(models, runs, variables, time_period, temp_dir, **
         
     return models_list, infile_list, tempfile_list, outfile_list, option_1_list, option_2_list
                     
-def get_preprocessing_ARPEGE_1_filelist(variables, time_period, temp_dir, **kwargs):
+def get_preprocessing_ARPEGE_filelist(variables, time_period, temp_dir, **kwargs):
     """ Returns filelist needed for preprocessing of ARPEGE raw output files.
     
     Parameters:
