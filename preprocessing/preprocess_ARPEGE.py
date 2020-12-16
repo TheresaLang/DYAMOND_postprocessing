@@ -28,7 +28,7 @@ ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to infile
 preprocess_dir = '/mnt/lustre02/work/um0878/users/tlang/work/dyamond/processing/preprocessing_ARPEGE'
 # get list of input and output files and options for horizontal interpolation
 infiles_2D, infiles_3D, outfileprefix, merge_list_3D, tempfile_list_3D, filelist_2D, tempfile_list_2D\
-= filelists.get_preprocessing_ARPEGE_1_filelist(**config)
+= filelists.get_preprocessing_ARPEGE_filelist(**config)
 
 ptools.preprocess_ARPEGE_1(preprocess_dir, infiles_2D[ID], infiles_3D[ID], outfileprefix[ID], merge_list_3D[ID],\
                            tempfile_list_3D[ID], filelist_2D[ID], tempfile_list_2D[ID], **config)
