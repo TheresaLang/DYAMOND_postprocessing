@@ -8,11 +8,9 @@ import typhon
 import random
 import pickle
 import filelists
-import analysis_tools as atools
 from time import sleep
 from scipy.interpolate import interp1d
 from netCDF4 import Dataset
-import matplotlib.pyplot as plt
 from moisture_space import utils
 import netCDF_tools as nctools
 
@@ -612,8 +610,8 @@ def calc_height_from_pressure(pres_file, temp_file, z0_file, timestep, model, ru
             z0 = np.ones((len(lat), len(lon))) * 14. # lowest model level at about 14m 
             #z0 = ds.variables['z'][:].filled(np.nan)
         elif model == 'ARPEGE':
-            #z0 = ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g # lowest level from geopotential
-            z0 = np.ones((len(lat), len(lon))) * 17. #(lowest model level is at 17 meters above sea level)
+            z0 = ds.variables['GH'][timestep][0].filled(np.nan) / typhon.constants.g + 17.# lowest level from geopotential
+            #z0 = np.ones((len(lat), len(lon))) * 17. #(lowest model level is at 17 meters above sea level)
             
     # Calculate heights
     logger.info('Calculate heights')
