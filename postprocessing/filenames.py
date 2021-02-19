@@ -102,5 +102,5 @@ def heightfile(data_dir, model):
 def landmaskfile(data_dir):
     """
     """
-    filename = f'{data_dir}/ICON/land_mask.nc'
+    filename = f'{data_dir}/land_mask.nc'
     return filename
