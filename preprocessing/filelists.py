@@ -48,6 +48,19 @@ def get_modelspecific_varnames(model):
             'STOAC': '-',
             'OMEGA': '-'
         }
+    elif model == 'ICON_coupled':
+        varname = {
+            'TEMP': 'ta',
+            'QV': 'hus',
+            'PRES': 'pfull',
+            'SURF_PRES': 'ps', 
+            'RH': 'RH',
+            'U': 'ua',
+            'V': 'va',
+            'OMEGA': 'wap',
+            'IWV': 'prw',
+            'PR': 'pr'
+        }
     elif model == 'NICAM':
         varname = {
             'TEMP': 'ms_tem',
@@ -283,6 +296,10 @@ def get_path2weights(model, run, grid_res, **kwargs):
             logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km".')
             return None
         
+    elif model == 'ICON_coupled':
+        grid_dir = '/work/mh0066/m300752/DYAMOND++/data/weight/'
+        weights = 'weight_dpp0016_01x01.nc'
+        
     elif model == 'NICAM':
         if run == '3.5km':
             weights = 'NICAM-3.5km_0.10_grid_wghts.nc'
@@ -481,6 +498,48 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         opt = opt + ' -seltimestep,1/96/12'
                     options.append(opt)
                     
+        elif model == 'ICON_coupled':
+            vars_1hr = ['IWV']
+            var2suffix = {
+                'TEMP': '_atm_3d_1_ml_',
+                'PRES': '_atm_3d_1_ml_',
+                'QV': '_atm_3d_4_ml_',
+                'U': '_atm_3d_2_ml_',
+                'V': '_atm_3d_2_ml_',
+                'OMEGA': '_atm_3d_3_ml_',
+                'IWV': '_atm1_2d_ml_',
+                'PR': '_atm2_2d_ml_'
+            }
+            
+            for var in variables:
+                var_suffix = var2suffix[var]
+                varname = varnames[var]
+                # paths to raw output
+                if run == 'dpp0016':
+                    directory = '/work/mh0287/k203123/GIT/icon-aes-dyw_albW/experiments/dpp0016/'
+                elif run == 'dpp0020':
+                    directory = '/work/mh0287/k203123/GIT/icon-aes-dyw2/experiments/dpp0020/'
+                elif run == 'dpp0029':
+                    directory = '/work/mh0287/k203123/GIT/icon-aes-dyw2/experiments/dpp0029/'
+            
+                # ICON output is one file per day
+                for t in time:
+                    # filenames
+                    raw_file = os.path.join(directory, f'{run}{var_suffix}{t.strftime("%Y%m%d")}T000000Z.nc')
+                    time_str = t.strftime("%m%d")
+                    out_file = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
+                    out_file = os.path.join(temp_dir, out_file)
+                    raw_files.append(raw_file)
+                    out_files.append(out_file)
+                    weights.append(get_path2weights(model, run, grid_res))
+                    grids.append(get_path2grid(grid_res))
+                    
+                    # options for remapping
+                    opt = f'-chname,{varname},{var} -selvar,{varname}'
+                    if var in vars_1hr:
+                        opt = opt + ' -seltimestep,1/24/6'
+                    options.append(opt)
+                   
         elif model == 'NICAM':
             # variables with 15-minute output
             vars_15min = ['SURF_PRES', 'OLR', 'IWV', 'OLRC', 'SUTOA', 'SDTOA']
