@@ -677,7 +677,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     """
     input_variables = ['U', 'V', 'W', 'QV', 'RH', 'TEMP', 'PRES']
     advected_variables = ['QV', 'RH', 'TEMP', 'PRES']
-    advection_terms = ['A_QV_h', 'A_QV_v', 'A_RH_h', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v']
+    advection_terms = ['A_QV_h', 'A_QV_v', 'A_RH_h', 'A_RH_v', 'DRH_Dt_h', 'DRH_Dt_v', 'T_RH_tot', 'T_RH_h_rel', 'T_RH_v_rel']
     lat = np.arange(-30, 30.1, 0.1)
     dx = 111000 * 0.1
     dy = 111000 * 0.1
@@ -752,6 +752,9 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
 
     profiles['A_QV_h'][np.where(mask_QV)] = np.nan
     profiles['DRH_Dt_h'][np.where(mask_RH)] = np.nan
+    profiles['T_RH_tot'] = profiles['DRH_Dt_h'] + profiles['DRH_Dt_v'] + profiles['A_RH_h'] + profiles['A_RH_v']
+    profiles['T_RH_h_rel'] = (profiles['DRH_Dt_h'] + profiles['A_RH_h']) / profiles['RH']
+    profiles['T_RH_v_rel'] = (profiles['DRH_Dt_v'] + profiles['A_RH_v']) / profiles['RH']
 
     logger.info('Save results')
     for term in advection_terms:
