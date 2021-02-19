@@ -195,8 +195,9 @@ def varlist_3D():
     """
     """
     varlist = ['TEMP', 'PRES', 'QV', 'QI', 'QC', 'QS', 'QG', 'QR', 'RH',\
-               'W', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v',\
-               'A_RH_h', 'A_QV_h', 'U', 'V', 'UV', 'dRH_dx', 'dRH_dy', 'dRH_dz']
+               'W', 'OMEGA', 'DRH_Dt_v', 'DRH_Dt_h', 'DRH_Dt_c', 'A_RH_v', 'A_QV_v',\
+               'A_RH_h', 'A_QV_h', 'U', 'V', 'UV', 'dRH_dx', 'dRH_dy', 'dRH_dz',\
+               'T_RH_tot', 'T_RH_h_rel', 'T_RH_v_rel']
     
     return varlist
 
