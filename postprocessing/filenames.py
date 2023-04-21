@@ -15,7 +15,7 @@ def time_period_str(time_period):
     
     return start_time_str, end_time_str
 
-def preprocessed_output(data_dir, model, run, variable, num_samples, time_period):
+def preprocessed_output(data_dir, model, run, variable, time_period):
     """
     """
     year = time_period[0][0:4]

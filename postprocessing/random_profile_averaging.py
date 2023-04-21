@@ -24,8 +24,9 @@ runs = config['runs']
 split_basins = config['split_basins']
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
+config['filename_suffix'] = str(ID)
 
 if split_basins:
     ptools.average_random_profiles_per_basin(models[ID], runs[ID], **config)
 else:
-    ptools.average_random_profiles(models[ID], runs[ID], **config)
+    ptools.average_random_profiles(models[ID-10], runs[ID-10], **config)

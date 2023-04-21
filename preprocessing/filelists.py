@@ -20,7 +20,7 @@ def get_modelspecific_varnames(model):
     Parameters:
         model (string): Name of model
     """
-    
+    # ICON (DYAMOND summer runs)
     if model == 'ICON':
         varname = {
             'TEMP': 'T',
@@ -48,10 +48,13 @@ def get_modelspecific_varnames(model):
             'STOAC': '-',
             'OMEGA': '-'
         }
-    elif model == 'ICON_coupled':
+    # ICON (Sapphire standard)
+    elif model == 'ICON_SAPPHIRE':
         varname = {
             'TEMP': 'ta',
             'QV': 'hus',
+            'QI': 'cli',
+            'QC': 'clw',
             'PRES': 'pfull',
             'SURF_PRES': 'ps', 
             'RH': 'RH',
@@ -61,6 +64,19 @@ def get_modelspecific_varnames(model):
             'IWV': 'prw',
             'PR': 'pr'
         }
+    # ICON (NWP standard)
+    elif model == 'ICON_NWP':
+        varname = {
+            'TEMP': 'temp',
+            'PRES': 'pres',
+            'QV': 'qv',
+            'QI': 'tot_qi_dia',
+            'QC': 'tot_qc_dia',
+            'U': 'u',
+            'V': 'v',
+            'W': 'w'
+        }
+        
     elif model == 'NICAM':
         varname = {
             'TEMP': 'ms_tem',
@@ -270,6 +286,9 @@ def get_path2grid(grid_res, **kwargs):
     gridname = str(grid_res).ljust(4, '0')
     grid = f'/work/ka1081/Hackathon/GrossStats/{gridname}_grid.nc'
     
+    if grid_res == 1.:
+        grid = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/grids/1.0_grid.txt'
+    
     if not os.path.isfile(grid):
         logger.warning('Warning: A grid file for this resolution does not exist yet.')
     
@@ -292,13 +311,31 @@ def get_path2weights(model, run, grid_res, **kwargs):
             weights = 'ICON_R2B09-mpi_0.10_grid_wghts.nc'
         elif run == '2.5km' or run == '2.5km_winter':
             weights = 'ICON_R2B10_0.10_grid_wghts.nc'
+        elif run == '10.0km':
+            weights = 'ICON_R2B08_0.10_grid_wghts.nc'
+        elif run == '20.0km' or '20.0km_explicit':
+            grid_dir = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/grids'
+            weights = 'ICON_R2B07_1.0_grid_wghts.nc'
+        elif run == '40.0km':
+            grid_dir = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/grids'
+            weights = 'ICON_R2B06_1.0_grid_wghts.nc'
+        elif run == '80.0km':
+            grid_dir = '/mnt/lustre02/work/mh1126/m300773/DYAMOND/grids'
+            weights = 'ICON_R2B05_1.0_grid_wghts.nc'
         else:
-            logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km".')
+            logger.error(f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km", "10.0km", "20.0km", "40.0km", "80.0km".')
             return None
         
-    elif model == 'ICON_coupled':
-        grid_dir = '/work/mh0066/m300752/DYAMOND++/data/weight/'
-        weights = 'weight_dpp0016_01x01.nc'
+    elif model == 'ICON_SAPPHIRE':
+        if run in ['dpp0016', 'dpp0020', 'dpp0029', 'dpp0033']:
+            grid_dir = '/work/mh0066/m300752/DYAMOND++/data/weight/'
+            weights = 'weight_dpp0016_01x01.nc'
+        elif run in ['mbe2058','mbe2059','mbe2060','mbe2082','mbe2083','mbe2084']:
+            grid_dir = '/mnt/lustre02/work/mh1126/m300773/OTS'
+            weights = 'weights_R2B09_0.1deg.nc'
+        
+    elif model == 'ICON_NWP':
+        weights = 'ICON_R2B09_0.10_grid_wghts.nc'
         
     elif model == 'NICAM':
         if run == '3.5km':
@@ -388,6 +425,14 @@ def get_path2targetheightfile(model, data_dir, **kwargs):
     
     return targetheightfile
 
+def get_path2targetpresfile(data_dir, **kwargs):
+    """
+    """
+
+    targetpresfile = f'{data_dir}/target_pressure.nc'
+    
+    return targetpresfile
+
 def get_path2z0file(model, run, **kwargs):
     """
     """
@@ -476,6 +521,16 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                     stem = os.path.join(dyamond_dir, f'ICON-2.5km/nwp_R2B10_lkm1007_{var_suffix}')
                 elif run == '2.5km_winter':
                     stem = f'/mnt/lustre02/work/mh1126/m300773/DYAMONDwinter/ICON-2.5km/nwp_R2B10_lkm1007_{var_suffix}'
+                elif run == '10.0km':
+                    stem = os.path.join(dyamond_dir, f'ICON-10km/nwp_R2B08_lkm1012_{var_suffix}')
+                elif run == '20.0km':
+                    stem = os.path.join(dyamond_dir, f'ICON-20km-conv/nwp_R2B07_lkm1016_{var_suffix}')
+                elif run == '20.0km_explicit':
+                    stem = os.path.join(dyamond_dir, f'ICON-20km/nwp_R2B07_lkm1010_{var_suffix}')
+                elif run == '40.0km':
+                    stem = os.path.join(dyamond_dir, f'ICON-40km-conv/nwp_R2B06_lkm1015_{var_suffix}')
+                elif run == '80.0km':
+                    stem = os.path.join(dyamond_dir, f'ICON-80km-conv/nwp_R2B05_lkm1011_{var_suffix}')
                 else:
                     print (f'Run {run} not supported for {model}.\nSupported runs are: "5.0km_1", "5.0km_2", "2.5km".')
                     return None
@@ -498,31 +553,105 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         opt = opt + ' -seltimestep,1/96/12'
                     options.append(opt)
                     
-        elif model == 'ICON_coupled':
-            vars_1hr = ['IWV']
+        elif model == 'ICON_SAPPHIRE':
+            if run in ['dpp0016', 'dpp0020', 'dpp0029', 'dpp0033']:
+                vars_1hr = ['IWV']
+                var2suffix = {
+                    'TEMP': '_atm_3d_1_ml_',
+                    'PRES': '_atm_3d_1_ml_',
+                    'QV': '_atm_3d_4_ml_',
+                    'QC': '_atm_3d_4_ml_',
+                    'QI': '_atm_3d_5_ml_',
+                    'U': '_atm_3d_2_ml_',
+                    'V': '_atm_3d_2_ml_',
+                    'OMEGA': '_atm_3d_3_ml_',
+                    'IWV': '_atm1_2d_ml_',
+                    'PR': '_atm2_2d_ml_'
+                }
+
+                for var in variables:
+                    var_suffix = var2suffix[var]
+                    varname = varnames[var]
+                    # paths to raw output
+                    if run == 'dpp0016':
+                        directory = '/work/mh0287/k203123/GIT/icon-aes-dyw_albW/experiments/dpp0016/'
+                    elif run == 'dpp0020':
+                        directory = '/work/mh0287/k203123/GIT/icon-aes-dyw2/experiments/dpp0020/'
+                    elif run == 'dpp0029':
+                        directory = '/work/mh0287/k203123/GIT/icon-aes-dyw2/experiments/dpp0029/'
+                    elif run == 'dpp0033':
+                        directory = '/work/mh0287/k203123/GIT/icon-aes-dyw2/experiments/dpp0033'
+
+                    # ICON output is one file per day
+                    for t in time:
+                        # filenames
+                        raw_file = os.path.join(directory, f'{run}{var_suffix}{t.strftime("%Y%m%d")}T000000Z.nc')
+                        time_str = t.strftime("%m%d")
+                        out_file = f'{model}-{run}_{var}_{time_str}_hinterp.nc'
+                        out_file = os.path.join(temp_dir, out_file)
+                        raw_files.append(raw_file)
+                        out_files.append(out_file)
+                        weights.append(get_path2weights(model, run, grid_res))
+                        grids.append(get_path2grid(grid_res))
+
+                        # options for remapping
+                        opt = f'-chname,{varname},{var} -selvar,{varname}'
+                        if var in vars_1hr:
+                            opt = opt + ' -seltimestep,1/24/6'
+                        options.append(opt)
+            
+            elif run in ['mbe2058','mbe2059','mbe2060','mbe2082','mbe2083','mbe2084']:
+                directory = '/work/bm1183/OTS/experiments'
+                var2suffix = {
+                    'TEMP': '_atm_3d_t_ml_',
+                    'PRES': '_atm_3d_pres_ml_',
+                    'QV': '_atm_3d_qv_ml_',
+                    'IWV': '_atm1_2d_ml_',
+                    'SURF_PRES': '_atm2_2d_ml_'
+                }
+                for var in variables:
+                    var_suffix = var2suffix[var]
+                    varname = varnames[var]
+                    for t in time:
+                        if t == time[0]:
+                            hours = np.arange(3, 24, 3)
+                        else:
+                            hours = np.arange(0, 24, 3)
+                        for h in hours:
+                            hour_str = f'{h:02d}'
+                            raw_file = os.path.join(directory, run, f'{run}{var_suffix}{t.strftime("%Y%m%d")}T{hour_str}0000Z.nc')
+                            date_str = t.strftime("%m%d")
+                            out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                            out_file = os.path.join(temp_dir, out_file)
+                            raw_files.append(raw_file)
+                            out_files.append(out_file)
+                            weights.append(get_path2weights(model, run, grid_res))
+                            grids.append(get_path2grid(grid_res))
+
+                            # options for remapping
+                            opt = f'-chname,{varname},{var} -selvar,{varname}'
+                            options.append(opt)
+                    
+
+        elif model == 'ICON_NWP':
             var2suffix = {
-                'TEMP': '_atm_3d_1_ml_',
-                'PRES': '_atm_3d_1_ml_',
-                'QV': '_atm_3d_4_ml_',
-                'U': '_atm_3d_2_ml_',
-                'V': '_atm_3d_2_ml_',
-                'OMEGA': '_atm_3d_3_ml_',
-                'IWV': '_atm1_2d_ml_',
-                'PR': '_atm2_2d_ml_'
+                'TEMP': '_atm_3d_tp_ml_',
+                'PRES': '_atm_3d_tp_ml_',
+                'QV': '_atm_3d_q_ml_',
+                'QC': '_atm_3d_q_ml_',
+                'QI': '_atm_3d_q_ml_',
+                'U': '_atm_3d_uvw_ml_',
+                'V': '_atm_3d_uvw_ml_',
+                'W': '_atm_3d_uvw_ml_'
             }
             
             for var in variables:
                 var_suffix = var2suffix[var]
                 varname = varnames[var]
-                # paths to raw output
-                if run == 'dpp0016':
-                    directory = '/work/mh0287/k203123/GIT/icon-aes-dyw_albW/experiments/dpp0016/'
-                elif run == 'dpp0020':
-                    directory = '/work/mh0287/k203123/GIT/icon-aes-dyw2/experiments/dpp0020/'
-                elif run == 'dpp0029':
-                    directory = '/work/mh0287/k203123/GIT/icon-aes-dyw2/experiments/dpp0029/'
-            
-                # ICON output is one file per day
+                # path to raw output
+                directory = '/mnt/lustre01/work/mh0287/k203123/GIT/icon-aes-dyw_cldL/experiments/nwp0005'
+                
+            # ICON output is one file per day
                 for t in time:
                     # filenames
                     raw_file = os.path.join(directory, f'{run}{var_suffix}{t.strftime("%Y%m%d")}T000000Z.nc')
@@ -536,10 +665,8 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                     
                     # options for remapping
                     opt = f'-chname,{varname},{var} -selvar,{varname}'
-                    if var in vars_1hr:
-                        opt = opt + ' -seltimestep,1/24/6'
                     options.append(opt)
-                   
+                
         elif model == 'NICAM':
             # variables with 15-minute output
             vars_15min = ['SURF_PRES', 'OLR', 'IWV', 'OLRC', 'SUTOA', 'SDTOA']
@@ -650,7 +777,7 @@ def get_interpolationfilelist(models, runs, variables, time_period, temp_dir, gr
                         else:
                             hour_file = f'DYAMOND.inst_03hr_3d_{varname}_Mv.{date_str}_{hour_str}00z.nc4'
                         hour_file = os.path.join(stem, hour_file)
-                        date_str = time[i].strftime("%m%d")
+                        date_str = t.strftime("%m%d")
                         out_file = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
                         out_file = os.path.join(temp_dir, out_file)
                         raw_files.append(hour_file)
@@ -1435,12 +1562,23 @@ def get_mergingfilelist(models, runs, variables, time_period, vinterp, temp_dir,
                                     infile_name = f'{model}-{run}_{var}_hinterp_vinterp_{date_str}_{h:02d}.nc'
                                     infile_name = os.path.join(temp_dir, infile_name)
                                     infile_list[v].append(infile_name)
+                                    
+                            elif model == 'ICON_SAPPHIRE' and run in ['mbe2058','mbe2059','mbe2060','mbe2082','mbe2083','mbe2084']:
+                                if i == 0:
+                                    hours = np.arange(3, 24, 3)
+                                else:
+                                    hours = np.arange(0, 24, 3)
+                                for h in hours:
+                                    infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'
+                                    infile_name = os.path.join(temp_dir, infile_name)
+                                    infile_list[v].append(infile_name)
 
                             elif model in ['GEOS', 'IFS', 'MPAS', 'SAM'] or var in ['RH', 'WHL', 'H']:
                                 for h in np.arange(0, 24, 3):
                                     infile_name = f'{model}-{run}_{var}_{date_str}_{h:02d}_hinterp.nc'
                                     infile_name = os.path.join(temp_dir, infile_name)
                                     infile_list[v].append(infile_name)
+                                    
                             else:
                                 infile_name = f'{model}-{run}_{var}_{date_str}_hinterp.nc'
                                 infile_name = os.path.join(temp_dir, infile_name)
@@ -1524,6 +1662,51 @@ def get_sellonlatboxfilelist(models, runs, variables, data_dir, time_period, lon
         
     return infile_list, outfile_list
        
+def get_pinterpolation_filelist(models, runs, variables, time_period, temp_dir, **kwargs):
+    """ Returns list of filenames needed for interpolation to pressure levels (currently only works for ICON)
+    
+    Parameters:
+        models (str): list of model names
+        runs (str): list of runs
+        variables (list of str): list of variables
+        time_period (list of str): list containing start and end of time period as string 
+            in the format YYYY-mm-dd 
+        temp_dir (str): path to directory to save temporary files 
+    """
+    infile_list = []
+    outfile_list = []
+    presfile_list = []
+    surfpresfile_list = []
+    variables_list = []
+    for model, run in zip(models, runs):
+        if model == 'ICON_SAPPHIRE':
+            time = pd.date_range(time_period[0]+' 3:00:00', time_period[1]+' 21:00:00', freq='3h')
+        else:
+            logger.error(f'Pressure level interpolation not implemented for model {model}')
+            
+        for var in variables:
+            for t in time:
+                date_str = t.strftime('%m%d')
+                hour_str = t.strftime('%H')
+                infile = f'{model}-{run}_{var}_{date_str}_{hour_str}_hinterp.nc'
+                infile = os.path.join(temp_dir, infile)
+                infile_list.append(infile)
+                
+                pres_file = f'{model}-{run}_PRES_{date_str}_{hour_str}_hinterp.nc'
+                pres_file = os.path.join(temp_dir, pres_file)
+                presfile_list.append(pres_file)
+                
+                surfpres_file = f'{model}-{run}_SURF_PRES_{date_str}_{hour_str}_hinterp.nc'
+                surfpres_file = os.path.join(temp_dir, surfpres_file)
+                surfpresfile_list.append(surfpres_file)
+                
+                outfile = f'{model}-{run}_{var}_{date_str}_{hour_str}_interp.nc'
+                outfile = os.path.join(temp_dir, outfile)
+                outfile_list.append(outfile)
+                
+                variables_list.append(var)
+                
+    return infile_list, presfile_list, surfpresfile_list, outfile_list, variables_list
 
 def get_vinterpolation_per_timestep_filelist(models, runs, variables, time_period, data_dir, num_timesteps, temp_dir, **kwargs):
     """ Returns list of filenames needed for the vertical interpolation which is done separately for 
@@ -1650,6 +1833,39 @@ def get_rhcalculation_filelist(models, runs, time_period, num_timesteps, data_di
     
     return model_list, run_list, temp_files, qv_files, pres_files
 
+def get_nclrhcalculation_filelist(models, runs, time_period, temp_dir, **kwargs):
+    """ Returns filelist needed to calculate relative humidity using the ncl function "relhum". Input files are
+    horizontally and vertically (to common pressure levels) interpolated, temporary files containing specific 
+    humidity, temperature and pressure levels.
+    """
+    
+    qv_files = []
+    temp_files = []
+    out_files = []
+    for model, run in zip(models, runs):
+        if model == 'ICON_SAPPHIRE':
+            time = pd.date_range(time_period[0]+' 3:00:00', time_period[1]+' 21:00:00', freq='3h')
+        else:
+            logger.error(f'Pressure level interpolation not implemented for model {model}')
+            
+        for t in time:
+            date_str = t.strftime('%m%d')
+            hour_str = t.strftime('%H')
+            qv_file = f'{model}-{run}_QV_{date_str}_{hour_str}_interp.nc'
+            qv_file = os.path.join(temp_dir, qv_file)
+            qv_files.append(qv_file)
+
+            temp_file = f'{model}-{run}_TEMP_{date_str}_{hour_str}_interp.nc'
+            temp_file = os.path.join(temp_dir, temp_file)
+            temp_files.append(temp_file)
+            
+            out_file = f'{model}-{run}_RH_{date_str}_{hour_str}_interp.nc'
+            out_file = os.path.join(temp_dir, out_file)
+            out_files.append(out_file)
+            
+    return qv_files, temp_files, out_files
+                
+                
 def get_wcalculation_filelist(models, runs, time_period, num_timesteps, data_dir, **kwargs):
     """ Returns filelist needed to calculate vertical velocity from pressure velocity for every timestep. 
     Input files consist of three files containing horizontally interpolated and merged temperature, 

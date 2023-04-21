@@ -24,7 +24,6 @@ import numpy as np
 from importlib import reload
 from os.path import join
 import preprocessing_tools as ptools
-import analysis_tools as atools
 from netCDF4 import Dataset
 import filelists
 reload(ptools)

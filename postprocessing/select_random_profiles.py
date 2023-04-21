@@ -16,6 +16,7 @@
 # Script to randomly select profiles from horizontally interpolated DYAMOND data
 import os
 import postprocessing_tools as ptools
+import numpy as np
 
 ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
 
@@ -23,7 +24,7 @@ ID = int(os.environ.get('SLURM_ARRAY_TASK_ID', 0)) # ID corresponds to model
 config = ptools.config()
 # add timesteps and filename suffix to config
 config['timesteps'] = None
-config['filename_suffix'] = ''
+config['filename_suffix'] = '' #str(ID)
 
 models = config['models']
 runs = config['runs']

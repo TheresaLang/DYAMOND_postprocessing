@@ -187,7 +187,7 @@ def varlist_2D():
     """
     """
     varlist = ['OLR', 'OLRC', 'STOA', 'IWV', 'CRH', 'TQI', 'TQC', 'TQG',\
-               'TQS', 'TQR', 'SST', 'SURF_PRES', 'lat', 'lon', 'idx']
+               'TQS', 'TQR', 'PR', 'SST', 'SURF_PRES', 'lat', 'lon', 'idx']
     
     return varlist
 
@@ -322,6 +322,9 @@ def get_timesteps(model, timestep_param, timesteps_tot, sample_days):
         elif sample_days.lower() == 'last10':
             num_timesteps = 80
             timesteps = np.arange(dimensions[0] - 80, dimensions[0])
+        elif sample_days.lower() == 'last5':
+            num_timesteps = 39
+            timesteps = np.arange(40, 79)
             
     if model in ['MPAS', 'IFS', 'ARPEGE']:
         # For these models there is one timestep less for OLR and STOA 
@@ -354,11 +357,13 @@ def get_latlon_inds_neighbors(lat_inds, lon_inds, num_lons=3600):
     
     
 def select_random_profiles(model, run, variables, time_period, data_dir, num_samples,
-                               new_sampling_idx, sample_days='all', timesteps=None, 
-                               filename_suffix='', **kwargs):
+                           new_sampling_idx, sample_days='all', timesteps=None, 
+                           filename_suffix='',**kwargs):
     """
     """
     logger.info(f'{model}-{run}')
+    print('filename_suffix:')
+    print(filename_suffix)
     # make sure that all variables needed to calculate IWV are in the list
     for v in ['TEMP', 'PRES', 'QV']:
         if new_sampling_idx and v not in variables:
@@ -377,7 +382,7 @@ def select_random_profiles(model, run, variables, time_period, data_dir, num_sam
     profiles = {}
     infiles = {}
     for variable in variables:
-        infiles[variable] = filenames.preprocessed_output(data_dir, model, run, variable, num_samples, time_period)
+        infiles[variable] = filenames.preprocessed_output(data_dir, model, run, variable, time_period)
     height_file = filenames.heightfile(data_dir, model)
     landmask_file = filenames.landmaskfile(data_dir)
     random_ind_file = filenames.random_ind(data_dir, model, run, num_samples, time_period)
@@ -406,7 +411,6 @@ def select_random_profiles(model, run, variables, time_period, data_dir, num_sam
         # number of samples per timestep
         num_samples_timestep = int(num_samples / num_timesteps)
         num_samples_exact = num_samples_timestep * num_timesteps
-
         # Dummy field to create NaN mask
         test_field = read_var_timestep(test_file, model, test_var, timestep=0)
 
@@ -436,7 +440,12 @@ def select_random_profiles(model, run, variables, time_period, data_dir, num_sam
         num_samples_timestep = lon_inds.shape[1]
         num_samples_exact = num_samples_timestep * num_timesteps
 
-
+    print('num_timesteps')
+    print(num_timesteps)
+    print('timesteps')
+    print(timesteps)
+    print('lat_inds len')
+    print(len(lat_inds))
     logger.info('Select random profiles')
 
     # Variables
@@ -448,9 +457,11 @@ def select_random_profiles(model, run, variables, time_period, data_dir, num_sam
             profiles[var] = np.ones((num_samples_exact, num_levels)) * np.nan
 
         for j, t in enumerate(timesteps):
+            print(j)
+            print(t)
             start = j * num_samples_timestep
             end = start + num_samples_timestep
-            profiles[var][start:end] = read_var_timestep_latlon(infiles[var], model, var, t, lat_inds[t], lon_inds[t])
+            profiles[var][start:end] = read_var_timestep_latlon(infiles[var], model, var, t, lat_inds[j], lon_inds[j])
 
     if new_sampling_idx:
         logger.info('Calculate IWV')
@@ -716,7 +727,7 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
     d_dx = {v: np.zeros_like(profiles['TEMP'], dtype=np.float32) for v in advected_variables}
     d_dy = {v: np.zeros_like(profiles['TEMP'], dtype=np.float32) for v in advected_variables}
     for var in advected_variables:
-        filename = filenames.preprocessed_output(data_dir, model, run, var, num_samples, time_period)
+        filename = filenames.preprocessed_output(data_dir, model, run, var, time_period)
         for t in range(num_timesteps):
             start = t * num_samples_timestep
             end = start + num_samples_timestep
@@ -764,10 +775,11 @@ def advection_for_random_profiles(model, run, time_period, num_samples, data_dir
         
     
 def average_random_profiles(model, run, time_period, variables, num_samples, num_percentiles, sample_days,
-                            data_dir, log_average, **kwargs):
+                            data_dir, log_average, filename_suffix, **kwargs):
     """
     """
-
+    print('filename_suffix')
+    print(filename_suffix)
     # lists of variables (2D and 3D)
     list_2D = varlist_2D()
     list_3D = varlist_3D()
@@ -777,8 +789,6 @@ def average_random_profiles(model, run, time_period, variables, num_samples, num
     logger.info('Read random profiles')
     if sample_days != 'all':
         filename_suffix = sample_days
-    else:
-        filename_suffix = ''
 
     profiles = {}
     height = {}

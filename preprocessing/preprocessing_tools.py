@@ -244,6 +244,24 @@ def interpolate_horizontally(infile, target_grid, weights, outfile, options, num
     logger.info(cmd)
     os.system(cmd)
     
+def interpolate_to_pressure_levels(infile, pres_file, surf_pres_file, outfile, pressure_levels, var, numthreads, **kwargs):
+    """ Interpolate vertically to common pressure levels.
+    
+    Parameters:
+        infile (str): Path to file containing variable to interpolate
+        pres_file (str): Path to file containing pressure for all grid points
+        surf_pres_file (str): Path to file containing surface pressure
+        outfile (str): Path to output file containing interpolated data
+        pressure_levels (array): Pressure levels to interpolate on
+        var (str): Variable to interpolate
+        numthreads (int): Number of OpenMP threads for cdo 
+    """
+    pressure_levels_str = ','.join([str(l) for l in pressure_levels])
+    cmd = f'cdo --verbose -P {numthreads} -f nc4 -O selvar,{var} -ap2pl,{pressure_levels_str} -merge [ {infile} {pres_file} {surf_pres_file} ] {outfile}'
+    
+    print(cmd)
+    os.system(cmd)
+    
 def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, time_period, temp_dir, **kwargs):
     """ Calculate relative humidity from temperature, specific humidity and pressure.
     Note: Only one timestep is selected from input files, output files contain one time step per file and have to be
@@ -321,6 +339,14 @@ def calc_relative_humidity(temp_file, qv_file, pres_file, timestep, model, run, 
     outname = f'{model}-{run}_RH_{date_str}_{hour_str}_hinterp.nc'
     outname = os.path.join(temp_dir, outname)
     nctools.latlonheightfield_to_netCDF(height, lat, lon, rh, 'RH', '[]', outname, time_dim=True, time_var=timestep*3, overwrite=True)
+    
+def calc_relative_humidity_ncl(qv_file, temp_file, out_file):
+    """ Calculate relative humidity using the ncl function "relhum"
+    """
+    
+    cmd = f'ncl \'filename_q=\"{qv_file}\"\' \'filename_t=\"{temp_file}\"\' \'filename_out=\"{out_file}\"\' /mnt/lustre02/work/mh1126/m300773/OTS/calc_rh.ncl'
+    logger.info(cmd)
+    os.system(cmd)
 
 def calc_vertical_velocity(omega_file, temp_file, qv_file, pres_file, heightfile, timestep, model, run, time_period, temp_dir, **kwargs):
     """ Calculate vertical velocity w from pressure velocity omega (requires temperature, specific humidity and pressure).
@@ -468,7 +494,7 @@ def interpolation_to_halflevels_per_timestep(infile, model, run, variable, times
     hour_str = time[timestep].strftime('%H')
     outname = f'{model}-{run}_{variable}HL_{date_str}_{hour_str}_hinterp.nc'
     outname = os.path.join(temp_dir, outname)
-    units = get_variable_units()
+    units = filelists.get_variable_units()
     
     # Read variables from file
     logger.info('Read from file')
